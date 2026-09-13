@@ -1,0 +1,22 @@
+{
+  "name": "short-circuit-discord-activity",
+  "version": "1.0.0",
+  "description": "Short Circuit - Turn-Based Bluffing & Risk Management HTML5 Game for Discord Activities",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "discord-activity",
+    "html5-game",
+    "turn-based",
+    "bluffing",
+    "cyberpunk"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
