@@ -1,4 +1,4 @@
-// Core Game State Engine for Short Circuit
+// Core Multi-Player Game Engine for Short Circuit (2 to 6 Players Battle)
 
 const WIRE_TYPES = {
   LIVE: 'LIVE',
@@ -14,35 +14,35 @@ class GameEngine {
     this.liveCount = 0;
     this.dudCount = 0;
 
-    // Player states
-    this.players = {
-      p1: {
-        id: options.p1?.id || 'p1',
-        name: options.p1?.name || 'Player 1',
-        avatar: options.p1?.avatar || null,
-        hp: this.maxHp,
-        items: [],
-        isBot: options.p1?.isBot || false,
-        isJammed: false
-      },
-      p2: {
-        id: options.p2?.id || 'p2',
-        name: options.p2?.name || 'Player 2',
-        avatar: options.p2?.avatar || null,
-        hp: this.maxHp,
-        items: [],
-        isBot: options.p2?.isBot || false,
-        isJammed: false
-      }
-    };
+    // Initialize list of 2 to 6 players
+    const inputPlayers = (options.players && options.players.length >= 2)
+      ? options.players
+      : [options.p1 || { name: 'Player 1' }, options.p2 || { name: 'Player 2' }];
 
-    this.activePlayerKey = 'p1'; // 'p1' or 'p2'
+    this.playerList = inputPlayers.slice(0, 6).map((p, idx) => ({
+      key: `p${idx + 1}`,
+      id: p.id || `p${idx + 1}`,
+      name: p.name || `Player ${idx + 1}`,
+      avatar: p.avatar || null,
+      hp: this.maxHp,
+      items: [],
+      isBot: !!p.isBot,
+      isJammed: false
+    }));
+
+    // Map for fast key lookup
+    this.players = {};
+    this.playerList.forEach(p => { this.players[p.key] = p; });
+
+    this.activePlayerIndex = 0;
+    this.activePlayerKey = this.playerList[0].key;
+
     this.isBoosted = false; // Voltage booster active
     this.opponentStunned = false; // Insulated glove active
-    this.lastPeekedWire = null; // Stored secret scan result for active player
+    this.lastPeekedWire = null;
     this.history = [];
     this.gameOver = false;
-    this.winner = null;
+    this.winnerKey = null;
 
     this.onStateChangeCallbacks = [];
     this.onLogCallbacks = [];
@@ -78,47 +78,55 @@ class GameEngine {
     this.log(`💬 ${sender.name}: "${emoteText}"`, 'emote');
   }
 
-  getOpponentKey(key = this.activePlayerKey) {
-    return key === 'p1' ? 'p2' : 'p1';
-  }
-
   getActivePlayer() {
-    return this.players[this.activePlayerKey];
+    return this.playerList[this.activePlayerIndex];
   }
 
-  getOpponentPlayer() {
-    return this.players[this.getOpponentKey()];
+  getAlivePlayers() {
+    return this.playerList.filter(p => p.hp > 0);
+  }
+
+  getNextAlivePlayerIndex(fromIndex = this.activePlayerIndex) {
+    let nextIdx = (fromIndex + 1) % this.playerList.length;
+    let count = 0;
+    while (this.playerList[nextIdx].hp <= 0 && count < this.playerList.length) {
+      nextIdx = (nextIdx + 1) % this.playerList.length;
+      count++;
+    }
+    return nextIdx;
   }
 
   // Start / initialize match
   startMatch() {
     this.round = 0;
     this.gameOver = false;
-    this.winner = null;
-    this.players.p1.hp = this.maxHp;
-    this.players.p2.hp = this.maxHp;
-    this.players.p1.items = [];
-    this.players.p2.items = [];
-    this.players.p1.isJammed = false;
-    this.players.p2.isJammed = false;
-    this.activePlayerKey = 'p1';
+    this.winnerKey = null;
+
+    this.playerList.forEach(p => {
+      p.hp = this.maxHp;
+      p.items = [];
+      p.isJammed = false;
+    });
+
+    this.activePlayerIndex = 0;
+    this.activePlayerKey = this.playerList[0].key;
     this.isBoosted = false;
     this.opponentStunned = false;
     this.lastPeekedWire = null;
 
-    this.log('⚡ HIGH VOLTAGE MATCH INITIATED. TERMINALS CONNECTED.', 'system');
+    this.log(`⚡ HIGH VOLTAGE BATTLE INITIATED. ${this.playerList.length} TERMINALS CONNECTED.`, 'system');
     this.startNewRound();
   }
 
   // Generate wire pool for a new round
-  generateWirePool(roundNumber) {
+  generateWirePool(roundNumber, playerCount = this.playerList.length) {
+    const scale = Math.max(1, Math.floor(playerCount / 2));
     const mixes = [
-      { live: 1, dud: 2 }, // Total 3
-      { live: 2, dud: 2 }, // Total 4
-      { live: 3, dud: 2 }, // Total 5
-      { live: 3, dud: 3 }, // Total 6
-      { live: 4, dud: 2 }, // Total 6
-      { live: 4, dud: 3 }  // Total 7
+      { live: 1 * scale, dud: 2 * scale },
+      { live: 2 * scale, dud: 2 * scale },
+      { live: 3 * scale, dud: 2 * scale },
+      { live: 3 * scale, dud: 3 * scale },
+      { live: 4 * scale, dud: 3 * scale }
     ];
 
     const mix = mixes[Math.min(roundNumber - 1, mixes.length - 1)];
@@ -144,12 +152,10 @@ class GameEngine {
     this.isBoosted = false;
     this.opponentStunned = false;
     this.lastPeekedWire = null;
-    this.players.p1.isJammed = false;
-    this.players.p2.isJammed = false;
 
-    // Grant items to both players (max 4 per player)
-    ['p1', 'p2'].forEach(pKey => {
-      const p = this.players[pKey];
+    // Grant items to all alive players (max 4 per player)
+    this.getAlivePlayers().forEach(p => {
+      p.isJammed = false;
       for (let i = 0; i < this.itemsPerRound; i++) {
         if (p.items.length < 4) {
           const newItem = window.getRandomItem ? window.getRandomItem() : 'multimeter';
@@ -164,10 +170,12 @@ class GameEngine {
     this.emitStateChange({ type: 'ROUND_STARTED' });
   }
 
-  // Use toolbox item
+  // Use toolbox item - STRICT TURN CHECK
   useItem(playerKey, itemIndex) {
     if (this.gameOver) return { success: false, reason: 'Game is over' };
-    if (playerKey !== this.activePlayerKey) return { success: false, reason: 'Not your turn' };
+    if (playerKey !== this.activePlayerKey) {
+      return { success: false, reason: 'Not your turn! You can only use items during your turn.' };
+    }
 
     const player = this.players[playerKey];
     if (player.isJammed) {
@@ -179,7 +187,6 @@ class GameEngine {
     }
 
     const itemId = player.items[itemIndex];
-    // Remove item from inventory
     player.items.splice(itemIndex, 1);
 
     let result = { success: true, itemId };
@@ -200,7 +207,7 @@ class GameEngine {
         } else {
           this.dudCount--;
         }
-        this.isBoosted = false; // Cutter dissipates boost
+        this.isBoosted = false;
         this.lastPeekedWire = null;
         result.cutWire = cutWire;
         this.log(`✂️ ${player.name} used WIRE CUTTERS! Safely snipped a ${cutWire} wire!`, 'item');
@@ -219,8 +226,9 @@ class GameEngine {
 
       case 'insulated_glove': {
         this.opponentStunned = true;
-        const opp = this.getOpponentPlayer();
-        this.log(`🧤 ${player.name} equipped INSULATED GLOVE! ${opp.name}'s next turn will be SKIPPED!`, 'item');
+        const nextIdx = this.getNextAlivePlayerIndex();
+        const nextPlayer = this.playerList[nextIdx];
+        this.log(`🧤 ${player.name} equipped INSULATED GLOVE! ${nextPlayer.name}'s next turn will be SKIPPED!`, 'item');
         break;
       }
 
@@ -237,10 +245,10 @@ class GameEngine {
       }
 
       case 'signal_jammer': {
-        const oppKey = this.getOpponentKey(playerKey);
-        const opp = this.players[oppKey];
-        opp.isJammed = true;
-        this.log(`📡 ${player.name} deployed SIGNAL JAMMER! ${opp.name}'s toolbox is JAMMED for next turn!`, 'item');
+        const nextIdx = this.getNextAlivePlayerIndex();
+        const nextPlayer = this.playerList[nextIdx];
+        nextPlayer.isJammed = true;
+        this.log(`📡 ${player.name} deployed SIGNAL JAMMER! ${nextPlayer.name}'s toolbox is JAMMED for next turn!`, 'item');
         break;
       }
     }
@@ -249,94 +257,17 @@ class GameEngine {
     return result;
   }
 
-  // Action: Shock Opponent
-  shockOpponent(playerKey) {
+  // Shock Action: Target specific player
+  shockTarget(shooterKey, targetKey) {
     if (this.gameOver) return { success: false, reason: 'Game is over' };
-    if (playerKey !== this.activePlayerKey) return { success: false, reason: 'Not your turn' };
+    if (shooterKey !== this.activePlayerKey) return { success: false, reason: 'Not your turn' };
     if (this.chamber.length === 0) return { success: false, reason: 'Chamber empty' };
 
-    const shooter = this.players[playerKey];
-    const targetKey = this.getOpponentKey(playerKey);
+    const shooter = this.players[shooterKey];
     const target = this.players[targetKey];
+    if (!target || target.hp <= 0) return { success: false, reason: 'Invalid or eliminated target' };
 
-    const wire = this.chamber.shift();
-    const wasBoosted = this.isBoosted;
-    this.lastPeekedWire = null;
-
-    let damage = 0;
-    let isLive = (wire === WIRE_TYPES.LIVE);
-
-    if (isLive) {
-      this.liveCount--;
-      damage = wasBoosted ? 2 : 1;
-      target.hp = Math.max(0, target.hp - damage);
-      this.log(`💥 LIVE WIRE! ${shooter.name} SHOCKS ${target.name} for ${damage} HP!`, 'shock-hit');
-    } else {
-      this.dudCount--;
-      this.log(`*CLICK* DUD WIRE. ${target.name} takes no damage.`, 'shock-dud');
-    }
-
-    this.isBoosted = false;
-
-    // Check for match over
-    if (target.hp <= 0) {
-      this.gameOver = true;
-      this.winner = playerKey;
-      this.log(`🏆 MATCH OVER! ${shooter.name} WINS THE DUEL!`, 'winner');
-      this.emitStateChange({
-        type: 'ACTION_SHOCK_OPPONENT',
-        wire,
-        damage,
-        wasBoosted,
-        isLive,
-        shooterKey: playerKey,
-        targetKey
-      });
-      return { success: true, wire, damage, gameOver: true, winner: playerKey };
-    }
-
-    // Determine turn passing
-    let turnPassed = true;
-    if (this.opponentStunned) {
-      this.opponentStunned = false;
-      turnPassed = false;
-      this.log(`🧤 ${target.name}'s turn was SKIPPED by Insulated Glove! ${shooter.name} continues!`, 'stun');
-    } else {
-      this.activePlayerKey = targetKey;
-      // Clear jammer status on target now that turn passes to them
-      target.isJammed = shooter.isJammed ? false : target.isJammed;
-      shooter.isJammed = false;
-    }
-
-    const chamberEmpty = this.chamber.length === 0;
-    this.emitStateChange({
-      type: 'ACTION_SHOCK_OPPONENT',
-      wire,
-      damage,
-      wasBoosted,
-      isLive,
-      shooterKey: playerKey,
-      targetKey,
-      turnPassed
-    });
-
-    if (chamberEmpty && !this.gameOver) {
-      this.startNewRound();
-    }
-
-    return { success: true, wire, damage, isLive, turnPassed };
-  }
-
-  // Action: Shock Yourself
-  shockSelf(playerKey) {
-    if (this.gameOver) return { success: false, reason: 'Game is over' };
-    if (playerKey !== this.activePlayerKey) return { success: false, reason: 'Not your turn' };
-    if (this.chamber.length === 0) return { success: false, reason: 'Chamber empty' };
-
-    const shooter = this.players[playerKey];
-    const targetKey = this.getOpponentKey(playerKey);
-    const opponent = this.players[targetKey];
-
+    const isSelf = (shooterKey === targetKey);
     const wire = this.chamber.shift();
     const wasBoosted = this.isBoosted;
     this.lastPeekedWire = null;
@@ -348,66 +279,115 @@ class GameEngine {
     if (isLive) {
       this.liveCount--;
       damage = wasBoosted ? 2 : 1;
-      shooter.hp = Math.max(0, shooter.hp - damage);
-      this.log(`💥 LIVE WIRE! ${shooter.name} SHOCKED THEMSELVES for ${damage} HP!`, 'shock-hit');
+      target.hp = Math.max(0, target.hp - damage);
 
-      this.isBoosted = false;
-
-      // Check match over
-      if (shooter.hp <= 0) {
-        this.gameOver = true;
-        this.winner = targetKey;
-        this.log(`🏆 MATCH OVER! ${opponent.name} WINS!`, 'winner');
-        this.emitStateChange({
-          type: 'ACTION_SHOCK_SELF',
-          wire,
-          damage,
-          wasBoosted,
-          isLive,
-          extraTurn: false,
-          shooterKey: playerKey
-        });
-        return { success: true, wire, damage, gameOver: true, winner: targetKey };
-      }
-
-      // Live self-shock passes turn (unless opponent stunned)
-      if (this.opponentStunned) {
-        this.opponentStunned = false;
-        this.log(`🧤 Stun consumed! ${shooter.name} keeps turn despite self-shock!`, 'stun');
+      if (isSelf) {
+        this.log(`💥 LIVE WIRE! ${shooter.name} SHOCKED THEMSELVES for ${damage} HP!`, 'shock-hit');
       } else {
-        this.activePlayerKey = targetKey;
-        opponent.isJammed = shooter.isJammed ? false : opponent.isJammed;
-        shooter.isJammed = false;
+        this.log(`💥 LIVE WIRE! ${shooter.name} SHOCKS ${target.name} for ${damage} HP!`, 'shock-hit');
       }
     } else {
-      // DUD! Free bonus turn!
       this.dudCount--;
-      extraTurn = true;
-      this.isBoosted = false;
-      this.log(`*CLICK* DUD WIRE! ${shooter.name} survived self-shock and EARNS AN EXTRA TURN!`, 'shock-dud');
-      // Retain active turn & jammer state
+      if (isSelf) {
+        extraTurn = true;
+        this.log(`*CLICK* DUD WIRE! ${shooter.name} survived self-shock and EARNS AN EXTRA TURN!`, 'shock-dud');
+      } else {
+        this.log(`*CLICK* DUD WIRE. ${target.name} takes no damage.`, 'shock-dud');
+      }
     }
+
+    this.isBoosted = false;
+
+    // Check target elimination
+    if (target.hp <= 0) {
+      this.log(`💀 ${target.name} WAS FLATLINED AND ELIMINATED FROM THE CIRCUIT!`, 'shock-hit');
+    }
+
+    // Check for match over (only 1 player alive)
+    const aliveList = this.getAlivePlayers();
+    if (aliveList.length <= 1) {
+      this.gameOver = true;
+      this.winnerKey = aliveList[0] ? aliveList[0].key : shooterKey;
+      const winnerName = this.players[this.winnerKey]?.name || 'Survivor';
+      this.log(`🏆 MATCH OVER! ${winnerName} SURVIVED AND WINS THE DUEL!`, 'winner');
+
+      this.emitStateChange({
+        type: isSelf ? 'ACTION_SHOCK_SELF' : 'ACTION_SHOCK_OPPONENT',
+        wire, damage, wasBoosted, isLive, extraTurn, shooterKey, targetKey
+      });
+
+      return { success: true, wire, damage, gameOver: true, winnerKey: this.winnerKey };
+    }
+
+    // Determine turn transition
+    let turnPassed = true;
+    if (isSelf && !isLive) {
+      // Dud self-shock: shooter retains turn
+      turnPassed = false;
+    } else if (this.opponentStunned) {
+      this.opponentStunned = false;
+      // Glove stun active: skip next player!
+      const skippedIdx = this.getNextAlivePlayerIndex();
+      const skippedPlayer = this.playerList[skippedIdx];
+      this.log(`🧤 ${skippedPlayer.name}'s turn was SKIPPED by Insulated Glove!`, 'stun');
+      this.activePlayerIndex = this.getNextAlivePlayerIndex(skippedIdx);
+      this.activePlayerKey = this.playerList[this.activePlayerIndex].key;
+    } else {
+      // Normal turn pass to next alive player
+      this.activePlayerIndex = this.getNextAlivePlayerIndex();
+      this.activePlayerKey = this.playerList[this.activePlayerIndex].key;
+    }
+
+    // Clear jammer on current active player
+    const currentActive = this.getActivePlayer();
+    currentActive.isJammed = false;
 
     const chamberEmpty = this.chamber.length === 0;
     this.emitStateChange({
-      type: 'ACTION_SHOCK_SELF',
-      wire,
-      damage,
-      wasBoosted,
-      isLive,
-      extraTurn,
-      shooterKey: playerKey
+      type: isSelf ? 'ACTION_SHOCK_SELF' : 'ACTION_SHOCK_OPPONENT',
+      wire, damage, wasBoosted, isLive, extraTurn, shooterKey, targetKey, turnPassed
     });
 
     if (chamberEmpty && !this.gameOver) {
       this.startNewRound();
     }
 
-    return { success: true, wire, damage, isLive, extraTurn };
+    return { success: true, wire, damage, isLive, extraTurn, turnPassed };
+  }
+
+  // Alias helpers for backwards compatibility
+  shockOpponent(playerKey, targetKey = null) {
+    if (!targetKey) {
+      // Default target: next alive player
+      const nextIdx = this.getNextAlivePlayerIndex();
+      targetKey = this.playerList[nextIdx].key;
+    }
+    return this.shockTarget(playerKey, targetKey);
+  }
+
+  shockSelf(playerKey) {
+    return this.shockTarget(playerKey, playerKey);
   }
 
   getSnapshot() {
-    const isCritical = (this.players.p1.hp <= 1 || this.players.p2.hp <= 1);
+    const aliveCount = this.getAlivePlayers().length;
+    const isCritical = this.playerList.some(p => p.hp === 1 && p.hp > 0);
+
+    const snapshotPlayers = {};
+    this.playerList.forEach(p => {
+      snapshotPlayers[p.key] = {
+        key: p.key,
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        hp: p.hp,
+        items: [...p.items],
+        isBot: p.isBot,
+        isJammed: p.isJammed,
+        isEliminated: p.hp <= 0
+      };
+    });
+
     return {
       round: this.round,
       maxHp: this.maxHp,
@@ -419,28 +399,13 @@ class GameEngine {
       opponentStunned: this.opponentStunned,
       isCriticalVoltage: isCritical,
       activePlayerKey: this.activePlayerKey,
+      activePlayerIndex: this.activePlayerIndex,
+      playerListKeys: this.playerList.map(p => p.key),
+      aliveCount,
       gameOver: this.gameOver,
-      winner: this.winner,
-      players: {
-        p1: {
-          id: this.players.p1.id,
-          name: this.players.p1.name,
-          avatar: this.players.p1.avatar,
-          hp: this.players.p1.hp,
-          items: [...this.players.p1.items],
-          isBot: this.players.p1.isBot,
-          isJammed: this.players.p1.isJammed
-        },
-        p2: {
-          id: this.players.p2.id,
-          name: this.players.p2.name,
-          avatar: this.players.p2.avatar,
-          hp: this.players.p2.hp,
-          items: [...this.players.p2.items],
-          isBot: this.players.p2.isBot,
-          isJammed: this.players.p2.isJammed
-        }
-      }
+      winnerKey: this.winnerKey,
+      winner: this.winnerKey ? snapshotPlayers[this.winnerKey] : null,
+      players: snapshotPlayers
     };
   }
 }

@@ -1,4 +1,4 @@
-// Main Application Controller for Short Circuit - v2.0 Ultra Polish & Virtual Keyboard
+// Main Application Controller for Short Circuit - v2.0 Ultra Polish & N-Player Battle System
 
 class ShortCircuitApp {
   constructor() {
@@ -7,8 +7,7 @@ class ShortCircuitApp {
     this.isBotGame = false;
     this.lobbyRole = 'host'; // 'host', 'opponent', 'spectator'
     this.lobbySettings = { maxHp: 3, itemsPerRound: 1 };
-    this.lobbyOpponent = null;
-    this.lobbySpectators = [];
+    this.lobbyPlayers = []; // List of up to 6 player objects in lobby
 
     this.engine = null;
     this.botAI = null;
@@ -18,6 +17,7 @@ class ShortCircuitApp {
     this.criticalTimeLeft = 10;
     this.mobilePendingItem = null;
 
+    this.selectedTargetKey = null; // Currently targeted rival key
     this.vkBuffer = '';
 
     this.init();
@@ -30,7 +30,6 @@ class ShortCircuitApp {
     // 2. Initialize Discord Bridge & Player profile
     this.currentUser = await window.discordBridge.init();
 
-    // Check for custom saved handle
     const savedHandle = localStorage.getItem('SC_USER_HANDLE');
     if (savedHandle && savedHandle.trim().length > 0) {
       this.currentUser.username = savedHandle.trim();
@@ -71,7 +70,6 @@ class ShortCircuitApp {
     this.vkBuffer = this.currentUser ? this.currentUser.username : 'RUNNER_001';
     this.updateVKDisplay();
 
-    // Letter / symbol key presses
     document.querySelectorAll('.vk-key[data-key]').forEach(btn => {
       btn.addEventListener('click', () => {
         window.soundFX?.playClick();
@@ -83,7 +81,6 @@ class ShortCircuitApp {
       });
     });
 
-    // Special VK actions
     document.getElementById('vk-btn-clear')?.addEventListener('click', () => {
       window.soundFX?.playClick();
       this.vkBuffer = '';
@@ -189,12 +186,10 @@ class ShortCircuitApp {
   }
 
   setupEventListeners() {
-    // Audio initial unlock on any first click
     document.addEventListener('click', () => {
       window.soundFX?.init();
     }, { once: true });
 
-    // Audio Mute Toggle
     const muteBtn = document.getElementById('audio-mute-btn');
     if (muteBtn) {
       muteBtn.addEventListener('click', () => {
@@ -220,7 +215,7 @@ class ShortCircuitApp {
       this.openModal('modal-join-room');
     });
 
-    // Modals Navigation (Footer links)
+    // Modals Navigation
     document.getElementById('nav-how-to-play')?.addEventListener('click', () => {
       window.soundFX.playClick();
       this.openModal('modal-how-to-play');
@@ -231,7 +226,6 @@ class ShortCircuitApp {
       this.openModal('modal-settings');
     });
 
-    // Close Modals
     document.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const modalId = btn.getAttribute('data-close');
@@ -278,11 +272,8 @@ class ShortCircuitApp {
     const colorblindToggle = document.getElementById('toggle-colorblind');
     if (colorblindToggle) {
       colorblindToggle.addEventListener('change', (e) => {
-        if (e.target.checked) {
-          document.body.classList.add('colorblind-mode');
-        } else {
-          document.body.classList.remove('colorblind-mode');
-        }
+        if (e.target.checked) document.body.classList.add('colorblind-mode');
+        else document.body.classList.remove('colorblind-mode');
       });
     }
 
@@ -319,33 +310,25 @@ class ShortCircuitApp {
       }
     });
 
-    // Lobby: Add AI Bot
-    document.getElementById('btn-lobby-add-bot')?.addEventListener('click', () => {
+    // Lobby: Fill Empty Seats with Bots
+    document.getElementById('btn-lobby-fill-bots')?.addEventListener('click', () => {
       window.soundFX.playClick();
-      this.lobbyOpponent = {
-        id: 'bot_bolt9',
-        name: 'BOLT-v9 (AI)',
-        avatar: window.discordBridge.generateNeonAvatar('BOLT-v9', true),
-        isBot: true,
-        ready: true
-      };
+      if (this.lobbyRole !== 'host') return;
+      const maxSeats = 6;
+      for (let i = this.lobbyPlayers.length; i < maxSeats; i++) {
+        const botName = `BOLT-v9-${String.fromCharCode(65 + i)}`;
+        this.lobbyPlayers.push({
+          id: `bot_${i}`,
+          name: botName,
+          avatar: window.discordBridge.generateNeonAvatar(botName, true),
+          isBot: true,
+          ready: true
+        });
+      }
       this.updateLobbyUI();
     });
 
-    // Lobby: Kick Seat 2 (Host Only)
-    document.getElementById('btn-kick-seat2')?.addEventListener('click', () => {
-      if (this.lobbyRole !== 'host') return;
-      window.soundFX.playClick();
-      if (this.lobbyOpponent) {
-        if (!this.lobbyOpponent.isBot && window.multiplayerManager) {
-          window.multiplayerManager.sendKickPlayer(this.lobbyOpponent.id);
-        }
-        this.lobbyOpponent = null;
-        this.updateLobbyUI();
-      }
-    });
-
-    // Lobby: Settings Toggles (HP & Items)
+    // Lobby Settings Toggles
     document.querySelectorAll('#hp-toggle-group .toggle-choice').forEach(btn => {
       btn.addEventListener('click', () => {
         if (this.lobbyRole !== 'host') return;
@@ -371,8 +354,8 @@ class ShortCircuitApp {
     // Lobby: Start Match
     document.getElementById('btn-start-match')?.addEventListener('click', () => {
       window.soundFX.playClick();
-      if (this.lobbyOpponent?.isBot) {
-        this.launchGame(this.currentUser, this.lobbyOpponent, this.lobbySettings);
+      if (this.isBotGame || this.lobbyPlayers.some(p => p.isBot)) {
+        this.launchGame(this.lobbyPlayers, this.lobbySettings);
       } else {
         window.multiplayerManager.sendStartMatch({});
       }
@@ -387,18 +370,20 @@ class ShortCircuitApp {
 
     // Primary In-Game Shock Buttons
     document.getElementById('btn-shock-opponent')?.addEventListener('click', () => {
-      this.handlePlayerShock(false);
+      this.handlePlayerShock(false, this.selectedTargetKey);
     });
 
     document.getElementById('btn-shock-self')?.addEventListener('click', () => {
-      this.handlePlayerShock(true);
+      const myKey = this.getLocalPlayerKey();
+      this.handlePlayerShock(true, myKey);
     });
 
     // Bluff Emote Buttons
     document.querySelectorAll('.bluff-emote-dock .emote-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const emote = btn.dataset.emote;
-        this.triggerEmote('p1', emote);
+        const myKey = this.getLocalPlayerKey();
+        this.triggerEmote(myKey, emote);
       });
     });
 
@@ -429,6 +414,12 @@ class ShortCircuitApp {
       window.multiplayerManager?.leaveRoom();
       this.switchScreen('screen-main-menu');
     });
+  }
+
+  getLocalPlayerKey() {
+    if (!this.engine) return 'p1';
+    const found = this.engine.playerList.find(p => p.id === this.currentUser.id);
+    return found ? found.key : 'p1';
   }
 
   openModal(modalId) {
@@ -463,47 +454,34 @@ class ShortCircuitApp {
     }
   }
 
-  // Quick Start vs AI Bot
+  // Quick Start vs AI Bots (Offline 4-Player Battle)
   startBotMatch() {
     this.isBotGame = true;
-    const botUser = {
-      id: 'bot_bolt9',
-      name: 'BOLT-v9 (AI)',
-      avatar: window.discordBridge.generateNeonAvatar('BOLT-v9', true),
-      isBot: true
-    };
-    this.launchGame(this.currentUser, botUser, { maxHp: 3, itemsPerRound: 1 });
+    const bot1 = { id: 'bot_b1', name: 'BOLT-v9 (Alpha)', avatar: window.discordBridge.generateNeonAvatar('BOLT-Alpha', true), isBot: true };
+    const bot2 = { id: 'bot_b2', name: 'BOLT-v9 (Beta)', avatar: window.discordBridge.generateNeonAvatar('BOLT-Beta', true), isBot: true };
+    const bot3 = { id: 'bot_b3', name: 'BOLT-v9 (Gamma)', avatar: window.discordBridge.generateNeonAvatar('BOLT-Gamma', true), isBot: true };
+    this.launchGame([this.currentUser, bot1, bot2, bot3], { maxHp: 3, itemsPerRound: 1 });
   }
 
   // Setup Host Room
   setupHostLobby() {
     this.isBotGame = false;
     this.lobbyRole = 'host';
-    this.lobbyOpponent = null;
-    this.lobbySpectators = [];
+    this.lobbyPlayers = [this.currentUser];
 
     const randomRoomId = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const roomState = window.multiplayerManager.initRoom(randomRoomId, this.currentUser, true, this.lobbySettings);
+    window.multiplayerManager.initRoom(randomRoomId, this.currentUser, true, this.lobbySettings);
 
     document.getElementById('lobby-room-code').textContent = `#${randomRoomId}`;
-
-    // Host Seat setup
-    document.getElementById('seat1-avatar-img').src = this.currentUser.avatar;
-    document.getElementById('seat1-name').textContent = this.currentUser.username;
-    document.getElementById('seat1-status').textContent = 'READY (HOST)';
-
-    // Reset Opponent seat & roster
     this.updateLobbyUI();
 
-    // Attach multiplayer callbacks
     window.multiplayerManager.onRoomUpdate = (state, role) => {
       this.lobbyRole = role;
-      if (state.opponent) {
-        this.lobbyOpponent = state.opponent;
-      } else if (!this.lobbyOpponent?.isBot) {
-        this.lobbyOpponent = null;
-      }
-      this.lobbySpectators = state.spectators || [];
+      const players = [];
+      if (state.host) players.push(state.host);
+      if (state.opponent) players.push(state.opponent);
+      if (state.spectators) players.push(...state.spectators);
+      this.lobbyPlayers = players;
       this.updateLobbyUI();
     };
 
@@ -513,9 +491,7 @@ class ShortCircuitApp {
     };
 
     window.multiplayerManager.onMatchStart = (payload) => {
-      const p1 = window.multiplayerManager.localRoomState.host;
-      const p2 = window.multiplayerManager.localRoomState.opponent;
-      this.launchGame(p1, p2, payload.settings || this.lobbySettings);
+      this.launchGame(this.lobbyPlayers, payload.settings || this.lobbySettings);
     };
 
     this.switchScreen('screen-lobby');
@@ -525,24 +501,19 @@ class ShortCircuitApp {
   joinRoomByCode(code) {
     this.isBotGame = false;
     this.lobbyRole = 'opponent';
-    const roomState = window.multiplayerManager.initRoom(code, this.currentUser, false, this.lobbySettings);
+    window.multiplayerManager.initRoom(code, this.currentUser, false, this.lobbySettings);
 
     document.getElementById('lobby-room-code').textContent = `#${code}`;
-    document.getElementById('seat2-avatar-img').src = this.currentUser.avatar;
-    document.getElementById('seat2-name').textContent = this.currentUser.username;
-    document.getElementById('seat2-status').textContent = 'READY';
-
-    // Hide host controls for guest
     document.querySelectorAll('.toggle-choice').forEach(b => b.disabled = true);
     document.getElementById('btn-start-match').style.display = 'none';
 
     window.multiplayerManager.onRoomUpdate = (state, role) => {
       this.lobbyRole = role;
-      if (state.host) {
-        document.getElementById('seat1-avatar-img').src = state.host.avatar || window.discordBridge.generateNeonAvatar(state.host.name);
-        document.getElementById('seat1-name').textContent = state.host.name;
-      }
-      this.lobbySpectators = state.spectators || [];
+      const players = [];
+      if (state.host) players.push(state.host);
+      if (state.opponent) players.push(state.opponent);
+      if (state.spectators) players.push(...state.spectators);
+      this.lobbyPlayers = players;
       this.updateLobbyUI();
     };
 
@@ -552,95 +523,77 @@ class ShortCircuitApp {
     };
 
     window.multiplayerManager.onMatchStart = (payload) => {
-      const p1 = window.multiplayerManager.localRoomState.host;
-      const p2 = window.multiplayerManager.localRoomState.opponent;
-      this.launchGame(p1, p2, payload.settings || this.lobbySettings);
+      this.launchGame(this.lobbyPlayers, payload.settings || this.lobbySettings);
     };
 
     this.switchScreen('screen-lobby');
   }
 
   updateLobbyUI() {
-    const seat2Name = document.getElementById('seat2-name');
-    const seat2Status = document.getElementById('seat2-status');
-    const seat2AvatarImg = document.getElementById('seat2-avatar-img');
-    const addBotBtn = document.getElementById('btn-lobby-add-bot');
-    const kickSeat2Btn = document.getElementById('btn-kick-seat2');
+    const grid = document.getElementById('multi-lobby-grid');
     const startBtn = document.getElementById('btn-start-match');
+    if (!grid) return;
 
-    if (this.lobbyOpponent) {
-      if (seat2Name) seat2Name.textContent = this.lobbyOpponent.name;
-      if (seat2Status) {
-        seat2Status.textContent = 'READY';
-        seat2Status.className = 'status-pill ready';
+    grid.innerHTML = '';
+    const maxSeats = 6;
+
+    for (let i = 0; i < maxSeats; i++) {
+      const p = this.lobbyPlayers[i];
+      const card = document.createElement('div');
+      card.className = 'lobby-seat-card';
+
+      if (p) {
+        if (i === 0) card.classList.add('active-seat');
+        card.innerHTML = `
+          <div class="seat-avatar">
+            <img src="${p.avatar || window.discordBridge.generateNeonAvatar(p.name, p.isBot)}" alt="Avatar">
+          </div>
+          <span class="seat-name">${p.name}</span>
+          <span class="status-pill ready">${i === 0 ? 'READY (HOST)' : (p.isBot ? 'BOT' : 'READY')}</span>
+        `;
+        if (this.lobbyRole === 'host' && i > 0 && !p.isBot) {
+          const kickBtn = document.createElement('button');
+          kickBtn.className = 'btn-kick';
+          kickBtn.style.fontSize = '10px';
+          kickBtn.style.padding = '3px 8px';
+          kickBtn.style.marginTop = '4px';
+          kickBtn.textContent = '🚫 KICK';
+          kickBtn.addEventListener('click', () => {
+            window.soundFX?.playClick();
+            if (window.multiplayerManager) window.multiplayerManager.sendKickPlayer(p.id);
+          });
+          card.appendChild(kickBtn);
+        }
+      } else {
+        card.innerHTML = `
+          <div class="seat-avatar" style="border-color: var(--border-dim); opacity: 0.4;"></div>
+          <span class="seat-name" style="color: var(--text-dim);">EMPTY SEAT ${i + 1}</span>
+          <span class="status-pill waiting">WAITING</span>
+        `;
       }
-      if (seat2AvatarImg) seat2AvatarImg.src = this.lobbyOpponent.avatar;
-      if (addBotBtn) addBotBtn.style.display = 'none';
-      if (kickSeat2Btn) {
-        kickSeat2Btn.style.display = (this.lobbyRole === 'host') ? 'inline-flex' : 'none';
-      }
-      if (startBtn) startBtn.disabled = false;
-    } else {
-      if (seat2Name) seat2Name.textContent = 'Waiting for challenger...';
-      if (seat2Status) {
-        seat2Status.textContent = 'EMPTY';
-        seat2Status.className = 'status-pill waiting';
-      }
-      if (seat2AvatarImg) seat2AvatarImg.src = '';
-      if (addBotBtn && this.lobbyRole === 'host') addBotBtn.style.display = 'inline-flex';
-      if (kickSeat2Btn) kickSeat2Btn.style.display = 'none';
-      if (startBtn) startBtn.disabled = true;
+      grid.appendChild(card);
     }
 
-    // Render Spectator Bench Roster (up to 4 spectators, total 6 players in room)
-    const specGrid = document.getElementById('spectator-slots-grid');
-    if (specGrid) {
-      specGrid.innerHTML = '';
-      const maxSpecs = 4;
-      for (let i = 0; i < maxSpecs; i++) {
-        const spec = this.lobbySpectators[i];
-        const chip = document.createElement('div');
-        chip.className = 'spectator-chip';
-
-        if (spec) {
-          chip.innerHTML = `<span>👀 ${spec.name}</span>`;
-          if (this.lobbyRole === 'host') {
-            const kickBtn = document.createElement('button');
-            kickBtn.className = 'btn-kick';
-            kickBtn.style.fontSize = '9px';
-            kickBtn.style.padding = '2px 6px';
-            kickBtn.textContent = 'KICK';
-            kickBtn.addEventListener('click', () => {
-              window.soundFX?.playClick();
-              if (window.multiplayerManager) window.multiplayerManager.sendKickPlayer(spec.id);
-            });
-            chip.appendChild(kickBtn);
-          }
-        } else {
-          chip.classList.add('empty');
-          chip.textContent = 'EMPTY BENCH SLOT';
-        }
-        specGrid.appendChild(chip);
-      }
+    if (startBtn) {
+      startBtn.disabled = (this.lobbyPlayers.length < 2);
     }
   }
 
-  // Launch In-Game Workbench
-  launchGame(p1Data, p2Data, settings) {
+  // Launch In-Game Workbench (2 to 6 Players Battle)
+  launchGame(playersList, settings) {
     this.engine = new GameEngine({
       maxHp: settings.maxHp || 3,
       itemsPerRound: settings.itemsPerRound || 1,
-      p1: p1Data,
-      p2: p2Data
+      players: playersList
     });
 
-    if (p2Data.isBot) {
-      this.botAI = new BotAI(this.engine, 'p2');
+    const botPlayer = this.engine.playerList.find(p => p.isBot);
+    if (botPlayer) {
+      this.botAI = new BotAI(this.engine, botPlayer.key);
     } else {
       this.botAI = null;
     }
 
-    // Engine Callbacks
     this.engine.onStateChange((snapshot, eventMeta) => {
       this.renderHUD(snapshot, eventMeta);
       this.handleGameEvents(snapshot, eventMeta);
@@ -654,14 +607,11 @@ class ShortCircuitApp {
       this.triggerEmote(playerKey, emote);
     });
 
-    // Multiplayer relay listener
     if (!this.isBotGame && window.multiplayerManager) {
       window.multiplayerManager.onGameAction = (action, senderId) => {
         if (senderId !== this.currentUser.id) {
-          if (action.type === 'SHOCK_OPPONENT') {
-            this.engine.shockOpponent(action.playerKey);
-          } else if (action.type === 'SHOCK_SELF') {
-            this.engine.shockSelf(action.playerKey);
+          if (action.type === 'SHOCK_TARGET') {
+            this.engine.shockTarget(action.shooterKey, action.targetKey);
           } else if (action.type === 'USE_ITEM') {
             this.engine.useItem(action.playerKey, action.itemIndex);
           } else if (action.type === 'EMOTE') {
@@ -671,23 +621,18 @@ class ShortCircuitApp {
       };
     }
 
-    // Clear log
     const logContainer = document.getElementById('combat-log');
     if (logContainer) logContainer.innerHTML = '';
 
-    // Switch to game screen
     this.switchScreen('screen-game');
 
-    // Start ambient music
     const liveRatio = this.engine.liveCount / (this.engine.liveCount + this.engine.dudCount || 1);
     window.soundFX.startAmbient(liveRatio);
     window.soundFX.playChamberReload();
 
-    // Start engine match
     this.engine.startMatch();
   }
 
-  // Typewriter Combat Log Entry
   appendCombatLogTypewriter(text, type = 'info') {
     const log = document.getElementById('combat-log');
     if (!log) return;
@@ -707,15 +652,13 @@ class ShortCircuitApp {
     }, 14);
   }
 
-  // Render complete HUD state with explicit player names
+  // Render complete HUD state with N-Player Battle Support
   renderHUD(state, eventMeta = {}) {
-    // 1. Chamber / Wire pool tracker
     const liveEl = document.getElementById('hud-live-count');
     const dudEl = document.getElementById('hud-dud-count');
     const roundEl = document.getElementById('round-indicator');
     const boosterTag = document.getElementById('hud-booster-tag');
     const spectatorTag = document.getElementById('hud-spectator-tag');
-    const criticalTag = document.getElementById('critical-timer-tag');
 
     if (liveEl) liveEl.textContent = state.liveCount;
     if (dudEl) dudEl.textContent = state.dudCount;
@@ -729,91 +672,153 @@ class ShortCircuitApp {
       spectatorTag.style.display = (this.lobbyRole === 'spectator') ? 'inline-block' : 'none';
     }
 
-    // Update ambient music intensity based on wire ratio
     const totalRemaining = state.liveCount + state.dudCount;
     if (totalRemaining > 0) {
       window.soundFX.updateAmbientIntensity(state.liveCount / totalRemaining);
     }
 
-    // Tension layer on <= 1 HP
-    if (state.isCriticalVoltage) {
-      window.soundFX.startTension();
-    } else {
-      window.soundFX.stopTension();
-    }
+    if (state.isCriticalVoltage) window.soundFX.startTension();
+    else window.soundFX.stopTension();
 
-    // 2. Player 1 Station
-    const p1 = state.players.p1;
-    document.getElementById('p1-hud-name').textContent = p1.name;
-    document.getElementById('p1-hud-avatar').src = p1.avatar || window.discordBridge.generateNeonAvatar(p1.name);
-    document.getElementById('p1-hp-label').textContent = `${p1.hp} / ${state.maxHp} HP`;
-    this.renderHealthCells('p1-cells', p1.hp, state.maxHp);
-    this.renderInventory('p1-tool-slots', p1.items, 'p1', p1.isJammed);
+    const localKey = this.getLocalPlayerKey();
+    const localPlayer = state.players[localKey] || state.players.p1;
 
-    // 3. Player 2 Station
-    const p2 = state.players.p2;
-    document.getElementById('p2-hud-name').textContent = p2.name;
-    document.getElementById('p2-hud-avatar').src = p2.avatar || window.discordBridge.generateNeonAvatar(p2.name, p2.isBot);
-    document.getElementById('p2-hp-label').textContent = `${p2.hp} / ${state.maxHp} HP`;
-    this.renderHealthCells('p2-cells', p2.hp, state.maxHp);
-    this.renderInventory('p2-tool-slots', p2.items, 'p2', p2.isJammed);
+    // Render Local Player Station (P1 / You)
+    document.getElementById('p1-hud-name').textContent = localPlayer.name;
+    document.getElementById('p1-hud-avatar').src = localPlayer.avatar || window.discordBridge.generateNeonAvatar(localPlayer.name);
+    document.getElementById('p1-hp-label').textContent = `${localPlayer.hp} / ${state.maxHp} HP`;
+    this.renderHealthCells('p1-cells', localPlayer.hp, state.maxHp);
+    this.renderInventory('p1-tool-slots', localPlayer.items, localPlayer.key, localPlayer.isJammed, state.activePlayerKey === localPlayer.key);
 
-    // Critical Voltage Styling & Timer
     const station1 = document.getElementById('station-p1');
-    const station2 = document.getElementById('station-p2');
-    if (p1.hp <= 1) station1?.classList.add('critical-voltage-active');
-    else station1?.classList.remove('critical-voltage-active');
-
-    if (p2.hp <= 1) station2?.classList.add('critical-voltage-active');
-    else station2?.classList.remove('critical-voltage-active');
-
-    // Turn Indicators & Explicit Player Names for Node Banner
-    const oscStatus = document.getElementById('osc-status-text');
-    const activePlayerName = (state.activePlayerKey === 'p1') ? p1.name : p2.name;
-    const oppPlayerName = (state.activePlayerKey === 'p1') ? p2.name : p1.name;
-
-    if (state.activePlayerKey === 'p1') {
+    if (state.activePlayerKey === localPlayer.key) {
       station1?.classList.add('active-turn');
-      station2?.classList.remove('active-turn');
-      if (oscStatus) {
-        oscStatus.textContent = `⚡ [${p1.name.toUpperCase()}] HAS THE CIRCUIT NODE`;
-        oscStatus.style.color = 'var(--neon-cyan)';
-      }
     } else {
-      station2?.classList.add('active-turn');
       station1?.classList.remove('active-turn');
-      if (oscStatus) {
-        oscStatus.textContent = `⚡ [${p2.name.toUpperCase()}] HAS THE CIRCUIT NODE`;
-        oscStatus.style.color = 'var(--neon-pink)';
-      }
     }
 
-    // Subtitle on shock opponent button showing target name
-    const subShockOpp = document.getElementById('sub-shock-opponent');
-    if (subShockOpp) {
-      subShockOpp.textContent = `Target [${oppPlayerName.toUpperCase()}] terminal (Damage if Live)`;
+    // Render Opponents Arena Grid (Rivals)
+    this.renderOpponentsGrid(state, localPlayer.key);
+
+    // Active Node Banner
+    const activePlayerObj = state.players[state.activePlayerKey];
+    const oscStatus = document.getElementById('osc-status-text');
+    if (oscStatus && activePlayerObj) {
+      oscStatus.textContent = `⚡ [${activePlayerObj.name.toUpperCase()}] HAS THE CIRCUIT NODE`;
+      oscStatus.style.color = (state.activePlayerKey === localPlayer.key) ? 'var(--neon-cyan)' : 'var(--neon-pink)';
     }
 
-    // Manage 10-Second Critical Voltage Timer for Active Player
-    this.manageCriticalTimer(state);
+    // Render Target Picker Chips
+    this.renderTargetPicker(state, localPlayer.key);
 
-    // 5. Button enable / disable
-    const isMyTurn = this.isBotGame
-      ? state.activePlayerKey === 'p1'
-      : (this.lobbyRole === 'host' ? state.activePlayerKey === 'p1' : (this.lobbyRole === 'opponent' ? state.activePlayerKey === 'p2' : false));
-
+    // Enable/disable primary buttons (Strict turn enforcement)
+    const isMyTurn = (state.activePlayerKey === localPlayer.key && !localPlayer.isEliminated);
     const shockOpponentBtn = document.getElementById('btn-shock-opponent');
     const shockSelfBtn = document.getElementById('btn-shock-self');
 
     if (shockOpponentBtn) shockOpponentBtn.disabled = !isMyTurn || state.gameOver;
     if (shockSelfBtn) shockSelfBtn.disabled = !isMyTurn || state.gameOver;
+
+    this.manageCriticalTimer(state);
+  }
+
+  renderOpponentsGrid(state, localKey) {
+    const grid = document.getElementById('opponents-arena-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    state.playerListKeys.forEach(pKey => {
+      if (pKey === localKey) return; // Skip local player
+      const rival = state.players[pKey];
+      if (!rival) return;
+
+      const station = document.createElement('div');
+      station.className = 'player-station';
+      station.id = `station-${pKey}`;
+      if (rival.isEliminated) station.classList.add('eliminated');
+      if (state.activePlayerKey === pKey) station.classList.add('active-turn');
+
+      station.innerHTML = `
+        <div id="${pKey}-emote-bubble" class="emote-speech-bubble" style="display: none;"></div>
+        <div>
+          <div class="station-header">
+            <div class="station-avatar">
+              <img src="${rival.avatar || window.discordBridge.generateNeonAvatar(rival.name, rival.isBot)}" alt="Avatar">
+            </div>
+            <div>
+              <div class="station-name">${rival.name}</div>
+              <div style="font-size: 10px; color: var(--text-dim);">${rival.isEliminated ? '💀 FLATLINED' : `TERMINAL ${pKey.toUpperCase()}`}</div>
+            </div>
+          </div>
+          <div class="voltage-meter-container">
+            <div class="voltage-label">
+              <span>VOLTAGE CAPACITY</span>
+              <span>${rival.hp} / ${state.maxHp} HP</span>
+            </div>
+            <div class="voltage-cells" id="${pKey}-cells"></div>
+          </div>
+        </div>
+        <div class="inventory-container">
+          <div class="inventory-title">TOOLBOX INVENTORY</div>
+          <div class="tool-slots" id="${pKey}-tool-slots"></div>
+        </div>
+      `;
+
+      // Clicking rival station selects them as target
+      if (!rival.isEliminated) {
+        station.style.cursor = 'pointer';
+        station.addEventListener('click', () => {
+          this.selectedTargetKey = pKey;
+          this.renderTargetPicker(state, localKey);
+        });
+      }
+
+      grid.appendChild(station);
+      this.renderHealthCells(`${pKey}-cells`, rival.hp, state.maxHp);
+      this.renderInventory(`${pKey}-tool-slots`, rival.items, pKey, rival.isJammed, false);
+    });
+  }
+
+  renderTargetPicker(state, localKey) {
+    const container = document.getElementById('target-chips-container');
+    const subShockOpp = document.getElementById('sub-shock-opponent');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const aliveRivals = state.playerListKeys
+      .map(k => state.players[k])
+      .filter(p => p && p.key !== localKey && !p.isEliminated);
+
+    if (aliveRivals.length === 0) return;
+
+    // Default target selection if invalid
+    if (!this.selectedTargetKey || !state.players[this.selectedTargetKey] || state.players[this.selectedTargetKey].isEliminated || this.selectedTargetKey === localKey) {
+      this.selectedTargetKey = aliveRivals[0].key;
+    }
+
+    aliveRivals.forEach(r => {
+      const chip = document.createElement('div');
+      chip.className = `target-chip ${r.key === this.selectedTargetKey ? 'selected' : ''}`;
+      chip.textContent = `🎯 ${r.name} (${r.hp} HP)`;
+      chip.addEventListener('click', () => {
+        window.soundFX?.playClick();
+        this.selectedTargetKey = r.key;
+        this.renderTargetPicker(state, localKey);
+      });
+      container.appendChild(chip);
+    });
+
+    const targetObj = state.players[this.selectedTargetKey];
+    if (subShockOpp && targetObj) {
+      subShockOpp.textContent = `Discharge into [${targetObj.name.toUpperCase()}] (${targetObj.hp} HP)`;
+    }
   }
 
   manageCriticalTimer(state) {
     const criticalTag = document.getElementById('critical-timer-tag');
     const activePlayer = state.players[state.activePlayerKey];
 
-    if (activePlayer && activePlayer.hp <= 1 && !state.gameOver) {
+    if (activePlayer && activePlayer.hp <= 1 && !state.gameOver && !activePlayer.isEliminated) {
       if (criticalTag) {
         criticalTag.style.display = 'inline-block';
         criticalTag.textContent = `CRITICAL VOLTAGE: ${this.criticalTimeLeft}s`;
@@ -829,13 +834,10 @@ class ShortCircuitApp {
           if (this.criticalTimeLeft <= 0) {
             clearInterval(this.criticalTimer);
             this.criticalTimer = null;
-            // Timeout auto-action: shock opponent
-            const isMyTurn = this.isBotGame
-              ? state.activePlayerKey === 'p1'
-              : (this.lobbyRole === 'host' ? state.activePlayerKey === 'p1' : state.activePlayerKey === 'p2');
-            if (isMyTurn && !state.gameOver) {
+            const localKey = this.getLocalPlayerKey();
+            if (state.activePlayerKey === localKey && !state.gameOver) {
               this.showToast('TIME EXPIRED! AUTO-DISCHARGING NODE!');
-              this.handlePlayerShock(false);
+              this.handlePlayerShock(false, this.selectedTargetKey);
             }
           }
         }, 1000);
@@ -860,27 +862,20 @@ class ShortCircuitApp {
 
       if (i < currentHp) {
         cell.classList.add('charged');
-        if (currentHp === 1) {
-          cell.classList.add('danger');
-        } else if (currentHp === 2 && maxHp > 3) {
-          cell.classList.add('warning');
-        }
+        if (currentHp === 1) cell.classList.add('danger');
+        else if (currentHp === 2 && maxHp > 3) cell.classList.add('warning');
       }
       container.appendChild(cell);
     }
   }
 
-  renderInventory(containerId, items, playerKey, isJammed = false) {
+  renderInventory(containerId, items, playerKey, isJammed = false, isMyTurn = false) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
 
-    const isMyTurn = this.isBotGame
-      ? this.engine.activePlayerKey === 'p1'
-      : (this.lobbyRole === 'host' ? this.engine.activePlayerKey === 'p1' : (this.lobbyRole === 'opponent' ? this.engine.activePlayerKey === 'p2' : false));
-
     const isSpectator = (this.lobbyRole === 'spectator');
-    const canUse = (playerKey === 'p1' && isMyTurn && !this.engine.gameOver && !isJammed);
+    const canUse = (isMyTurn && !this.engine.gameOver && !isJammed);
 
     for (let i = 0; i < 4; i++) {
       const slot = document.createElement('div');
@@ -903,16 +898,22 @@ class ShortCircuitApp {
           badge.textContent = itemDef?.shortName || '';
           slot.appendChild(badge);
 
-          if (canUse) {
-            slot.addEventListener('click', () => {
+          // STRICT TURN ENFORCEMENT: Toast warning if clicked out of turn
+          slot.addEventListener('click', () => {
+            if (!isMyTurn) {
+              window.soundFX?.playClick();
+              this.showToast('Not your turn! You can only use items during your turn.');
+              return;
+            }
+            if (canUse) {
               if (window.innerWidth < 640) {
                 this.mobilePendingItem = { playerKey, itemIndex: i, itemType };
                 this.showMobileItemModal(itemDef);
               } else {
                 this.executeItemUse(playerKey, i, itemType);
               }
-            });
-          }
+            }
+          });
         }
       } else {
         slot.classList.add('empty');
@@ -989,33 +990,30 @@ class ShortCircuitApp {
     }, 2200);
   }
 
-  // Handle Player Primary Shock with 3-Second Intense Buildup Beat Sequence
-  async handlePlayerShock(isSelf) {
-    const playerKey = this.isBotGame
-      ? 'p1'
-      : (this.lobbyRole === 'host' ? 'p1' : 'p2');
+  // Handle Player Primary Shock with Target Selection & 3-Second Intense Buildup Sequence
+  async handlePlayerShock(isSelf, targetKey) {
+    const localKey = this.getLocalPlayerKey();
+    if (this.engine.activePlayerKey !== localKey || this.engine.gameOver) return;
 
-    if (this.engine.activePlayerKey !== playerKey || this.engine.gameOver) return;
+    const actualTargetKey = isSelf ? localKey : (targetKey || this.selectedTargetKey);
+    if (!actualTargetKey) return;
 
-    // Disable buttons immediately
     document.getElementById('btn-shock-opponent').disabled = true;
     document.getElementById('btn-shock-self').disabled = true;
 
-    // Clear critical timer during resolution
     if (this.criticalTimer) {
       clearInterval(this.criticalTimer);
       this.criticalTimer = null;
     }
 
-    // Relay action if multiplayer
     if (!this.isBotGame && window.multiplayerManager) {
       window.multiplayerManager.sendGameAction({
-        type: isSelf ? 'SHOCK_SELF' : 'SHOCK_OPPONENT',
-        playerKey
+        type: 'SHOCK_TARGET',
+        shooterKey: localKey,
+        targetKey: actualTargetKey
       }, this.currentUser.id);
     }
 
-    // ── 3-SECOND INTENSE BEAT BUILDUP & REVEAL SEQUENCE ──────────────────────
     const oscStatus = document.getElementById('osc-status-text');
     const activeName = this.engine.getActivePlayer().name;
     if (oscStatus) {
@@ -1024,16 +1022,10 @@ class ShortCircuitApp {
     }
 
     this.canvasFX.setState('buildup');
-
-    // Play procedural 3-second intense buildup beat
     await window.soundFX.playIntenseRevealBeat(3000);
 
-    // ── REVEAL MOMENT ────────────────────────────────────────────────────────
-    if (isSelf) {
-      this.engine.shockSelf(playerKey);
-    } else {
-      this.engine.shockOpponent(playerKey);
-    }
+    // Execute shock on engine
+    this.engine.shockTarget(localKey, actualTargetKey);
   }
 
   // Handle game events and animations
@@ -1046,8 +1038,8 @@ class ShortCircuitApp {
         this.canvasFX.setState('shock');
         this.canvasFX.triggerSparks(0.5, 0.5, wasBoosted ? 55 : 35, '#ff0055');
 
-        const hitTargetStation = (targetKey === 'p1') ? 'station-p1' : (type === 'ACTION_SHOCK_SELF' ? (shooterKey === 'p1' ? 'station-p1' : 'station-p2') : 'station-p2');
-        this.canvasFX.triggerHitFlash(hitTargetStation, '#ff0055');
+        const targetStationId = `station-${targetKey}`;
+        this.canvasFX.triggerHitFlash(targetStationId, '#ff0055');
       } else {
         window.soundFX.playDudClick();
         this.canvasFX.setState('dud');
@@ -1061,16 +1053,19 @@ class ShortCircuitApp {
       }
     }
 
-    // Check Match Over
     if (snapshot.gameOver) {
       await this.delay(800);
       this.showMatchOver(snapshot);
       return;
     }
 
-    // Trigger AI Bot turn if needed
-    if (snapshot.activePlayerKey === 'p2' && snapshot.players.p2.isBot && !snapshot.gameOver) {
-      this.botAI.thinkAndAct();
+    // Trigger AI Bot turn if current active player is a Bot
+    const activeObj = snapshot.players[snapshot.activePlayerKey];
+    if (activeObj && activeObj.isBot && !snapshot.gameOver) {
+      if (this.botAI) {
+        this.botAI.botKey = snapshot.activePlayerKey;
+        this.botAI.thinkAndAct();
+      }
     }
   }
 
@@ -1083,21 +1078,17 @@ class ShortCircuitApp {
       this.criticalTimer = null;
     }
 
-    const winnerKey = snapshot.winner;
-    const winner = snapshot.players[winnerKey];
-    const isPlayer1Winner = (winnerKey === 'p1');
+    const winnerObj = snapshot.winner;
+    const localKey = this.getLocalPlayerKey();
+    const amIWinner = (winnerObj && winnerObj.key === localKey);
 
     const winnerAvatarImg = document.getElementById('winner-avatar-img');
     const winnerTitle = document.getElementById('winner-title');
     const winnerMsg = document.getElementById('winner-message');
 
-    if (winnerAvatarImg) {
-      winnerAvatarImg.src = winner.avatar || window.discordBridge.generateNeonAvatar(winner.name, winner.isBot);
+    if (winnerAvatarImg && winnerObj) {
+      winnerAvatarImg.src = winnerObj.avatar || window.discordBridge.generateNeonAvatar(winnerObj.name, winnerObj.isBot);
     }
-
-    const amIWinner = this.isBotGame
-      ? isPlayer1Winner
-      : (this.lobbyRole === 'host' ? isPlayer1Winner : (this.lobbyRole === 'opponent' ? !isPlayer1Winner : false));
 
     if (this.lobbyRole !== 'spectator') {
       this.saveRecord(amIWinner);
@@ -1106,12 +1097,12 @@ class ShortCircuitApp {
     if (amIWinner) {
       winnerTitle.textContent = 'VICTORY ACHIEVED';
       winnerTitle.style.color = 'var(--neon-green)';
-      winnerMsg.textContent = `${winner.name} successfully grounded their opponent and survived the circuit.`;
+      winnerMsg.textContent = `${winnerObj ? winnerObj.name : 'You'} successfully grounded all rivals and survived the circuit!`;
       window.soundFX.playVictory();
     } else {
       winnerTitle.textContent = 'CIRCUIT OVERLOAD (DEFEAT)';
       winnerTitle.style.color = 'var(--neon-pink)';
-      winnerMsg.textContent = `${winner.name} claimed victory. Your terminal suffered critical voltage collapse.`;
+      winnerMsg.textContent = `${winnerObj ? winnerObj.name : 'Rival'} claimed total victory. Your terminal suffered critical voltage collapse.`;
       window.soundFX.playDefeat();
     }
 
@@ -1123,7 +1114,6 @@ class ShortCircuitApp {
   }
 }
 
-// Start app once DOM is ready
 window.addEventListener('DOMContentLoaded', () => {
   window.app = new ShortCircuitApp();
 });

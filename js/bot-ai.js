@@ -1,10 +1,10 @@
-// Strategic AI Bot ("BOLT-v9") for Short Circuit
+// Strategic AI Bot ("BOLT-v9") for Short Circuit N-Player Battle
 
 class BotAI {
   constructor(engine, botKey = 'p2') {
     this.engine = engine;
     this.botKey = botKey;
-    this.knownCurrentWire = null; // Stored if bot scanned the wire
+    this.knownCurrentWire = null;
     this.isThinking = false;
   }
 
@@ -13,7 +13,14 @@ class BotAI {
     this.isThinking = false;
   }
 
-  // Generate bot terminal chatter
+  getBestTargetKey() {
+    const aliveOpponents = this.engine.playerList.filter(p => p.hp > 0 && p.key !== this.botKey);
+    if (aliveOpponents.length === 0) return this.botKey;
+    // Target opponent with lowest HP to land eliminations
+    aliveOpponents.sort((a, b) => a.hp - b.hp);
+    return aliveOpponents[0].key;
+  }
+
   getRandomChatter(context) {
     const chatters = {
       scan: [
@@ -31,12 +38,12 @@ class BotAI {
         'BOLT-v9: Deploying wire cutters.'
       ],
       glove: [
-        'BOLT-v9: Ground clamp deployed. You cannot move next cycle.',
+        'BOLT-v9: Ground clamp deployed. Next rival locked out.',
         'BOLT-v9: Interlocking rival trigger.'
       ],
       shockOpponent: [
-        'BOLT-v9: Discharging node into opponent terminal.',
-        'BOLT-v9: Calculating 89.4% probability of critical failure... on you.',
+        'BOLT-v9: Discharging node into rival terminal.',
+        'BOLT-v9: Calculating 89.4% probability of critical failure... on target.',
         'BOLT-v9: Firing line.'
       ],
       shockSelf: [
@@ -54,7 +61,6 @@ class BotAI {
     if (this.isThinking) return;
     this.isThinking = true;
 
-    // Simulate realistic terminal calculation delay
     await this.delay(1200);
 
     if (this.engine.gameOver || this.engine.activePlayerKey !== this.botKey) {
@@ -63,21 +69,24 @@ class BotAI {
     }
 
     const bot = this.engine.players[this.botKey];
-    const opp = this.engine.getOpponentPlayer();
-    const totalRemaining = this.engine.liveCount + this.engine.dudCount;
+    if (!bot || bot.hp <= 0) {
+      this.isThinking = false;
+      return;
+    }
 
+    const totalRemaining = this.engine.liveCount + this.engine.dudCount;
     if (totalRemaining === 0) {
       this.isThinking = false;
       return;
     }
 
+    const targetKey = this.getBestTargetKey();
     const probLive = this.engine.liveCount / totalRemaining;
     const probDud = this.engine.dudCount / totalRemaining;
 
-    // Step 1: Check toolbox items and consider using them
-    // Multimeter check
+    // Step 1: Multimeter check
     const multimeterIdx = bot.items.indexOf('multimeter');
-    if (multimeterIdx !== -1 && !this.knownCurrentWire && totalRemaining > 1) {
+    if (multimeterIdx !== -1 && !this.knownCurrentWire && totalRemaining > 1 && !bot.isJammed) {
       this.engine.log(this.getRandomChatter('scan'), 'bot-chatter');
       await this.delay(600);
 
@@ -89,11 +98,10 @@ class BotAI {
       await this.delay(800);
     }
 
-    // If bot knows wire is LIVE
+    // Known LIVE wire
     if (this.knownCurrentWire === 'LIVE') {
-      // If has Voltage Booster and opponent has >= 2 HP, boost it!
       const boosterIdx = bot.items.indexOf('voltage_booster');
-      if (boosterIdx !== -1 && !this.engine.isBoosted && opp.hp > 1) {
+      if (boosterIdx !== -1 && !this.engine.isBoosted && !bot.isJammed) {
         this.engine.log(this.getRandomChatter('boost'), 'bot-chatter');
         await this.delay(600);
         this.engine.useItem(this.botKey, boosterIdx);
@@ -101,55 +109,39 @@ class BotAI {
         await this.delay(700);
       }
 
-      // If has Insulated Glove and opponent isn't stunned, stun them!
-      const gloveIdx = bot.items.indexOf('insulated_glove');
-      if (gloveIdx !== -1 && !this.engine.opponentStunned && opp.hp > 2) {
-        this.engine.log(this.getRandomChatter('glove'), 'bot-chatter');
-        await this.delay(600);
-        this.engine.useItem(this.botKey, gloveIdx);
-        window.soundFX?.playGlove();
-        await this.delay(700);
-      }
-
-      // Knowing it's Live, 100% shock opponent
       this.engine.log(this.getRandomChatter('shockOpponent'), 'bot-chatter');
       await this.delay(600);
       this.knownCurrentWire = null;
       this.isThinking = false;
-      this.engine.shockOpponent(this.botKey);
+      this.engine.shockTarget(this.botKey, targetKey);
       if (callback) callback();
       return;
     }
 
-    // If bot knows wire is DUD
+    // Known DUD wire
     if (this.knownCurrentWire === 'DUD') {
-      // 100% shock self for free bonus turn!
       this.engine.log(this.getRandomChatter('shockSelf'), 'bot-chatter');
       await this.delay(600);
       this.knownCurrentWire = null;
       this.isThinking = false;
-      this.engine.shockSelf(this.botKey);
+      this.engine.shockTarget(this.botKey, this.botKey);
       if (callback) callback();
       return;
     }
 
-    // If wire is unknown: evaluate probabilities
-    // High probability of Dud (>= 65% or 100% Dud)
+    // Unknown wire probabilities
     if (probDud >= 0.65 || this.engine.liveCount === 0) {
       this.engine.log(this.getRandomChatter('shockSelf'), 'bot-chatter');
       await this.delay(600);
       this.isThinking = false;
-      this.engine.shockSelf(this.botKey);
+      this.engine.shockTarget(this.botKey, this.botKey);
       if (callback) callback();
       return;
     }
 
-    // High probability of Live (>= 60% or 100% Live)
     if (probLive >= 0.60 || this.engine.dudCount === 0) {
-      // If 100% Live and bot has Wire Cutters and bot is at 1 HP: can use Wire Cutters if it wants to be cautious
-      // But shocking opponent with 100% Live is lethal!
       const boosterIdx = bot.items.indexOf('voltage_booster');
-      if (boosterIdx !== -1 && !this.engine.isBoosted && probLive > 0.7) {
+      if (boosterIdx !== -1 && !this.engine.isBoosted && !bot.isJammed) {
         this.engine.log(this.getRandomChatter('boost'), 'bot-chatter');
         await this.delay(600);
         this.engine.useItem(this.botKey, boosterIdx);
@@ -157,42 +149,29 @@ class BotAI {
         await this.delay(700);
       }
 
-      const gloveIdx = bot.items.indexOf('insulated_glove');
-      if (gloveIdx !== -1 && !this.engine.opponentStunned) {
-        this.engine.log(this.getRandomChatter('glove'), 'bot-chatter');
-        await this.delay(600);
-        this.engine.useItem(this.botKey, gloveIdx);
-        window.soundFX?.playGlove();
-        await this.delay(700);
-      }
-
       this.engine.log(this.getRandomChatter('shockOpponent'), 'bot-chatter');
       await this.delay(600);
       this.isThinking = false;
-      this.engine.shockOpponent(this.botKey);
+      this.engine.shockTarget(this.botKey, targetKey);
       if (callback) callback();
       return;
     }
 
-    // 50/50 or close scenario:
-    // If bot has Wire Cutters and has high doubt, snip it
     const cutterIdx = bot.items.indexOf('wire_cutters');
-    if (cutterIdx !== -1 && Math.random() < 0.45) {
+    if (cutterIdx !== -1 && !bot.isJammed && Math.random() < 0.45) {
       this.engine.log(this.getRandomChatter('cut'), 'bot-chatter');
       await this.delay(600);
       this.engine.useItem(this.botKey, cutterIdx);
       window.soundFX?.playCutters();
       await this.delay(800);
       this.isThinking = false;
-      // Re-evaluate
       return this.thinkAndAct(callback);
     }
 
-    // Default 50/50 move: target opponent
     this.engine.log(this.getRandomChatter('shockOpponent'), 'bot-chatter');
     await this.delay(600);
     this.isThinking = false;
-    this.engine.shockOpponent(this.botKey);
+    this.engine.shockTarget(this.botKey, targetKey);
     if (callback) callback();
   }
 

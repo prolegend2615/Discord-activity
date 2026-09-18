@@ -41,7 +41,7 @@
         <div class="menu-hero">
           <span class="hero-subtitle">High-Voltage Russian Roulette Duel</span>
           <p class="hero-desc">
-            Two runners. One experimental capacitor loaded with secret Live and Dud wires. Gamble on shocking yourself for bonus turns, or blast your rival with lethal single-use tools.
+            Up to 6 runners. One experimental capacitor loaded with secret Live and Dud wires. Gamble on shocking yourself for bonus turns, or blast your rivals with lethal single-use tools.
           </p>
           <div style="margin-top: 8px;">
             <span class="match-record-badge" id="main-menu-stats">RECORD: 0 WINS / 0 LOSSES</span>
@@ -51,12 +51,12 @@
         <div class="menu-actions">
           <button class="term-btn btn-primary" id="btn-play-bot">
             <span>🤖</span>
-            <span>PLAY VS. AI BOT (OFFLINE)</span>
+            <span>PLAY VS. AI BOTS (OFFLINE)</span>
           </button>
 
           <button class="term-btn" id="btn-host-room">
             <span>📡</span>
-            <span>HOST ROOM (DISCORD / P2P)</span>
+            <span>HOST ROOM (2-6 PLAYERS)</span>
           </button>
 
           <button class="term-btn" id="btn-open-join">
@@ -72,7 +72,7 @@
       </div>
     </main>
 
-    <!-- SCREEN 2: HOST / LOBBY SETUP -->
+    <!-- SCREEN 2: HOST / LOBBY SETUP (UP TO 6 PLAYERS) -->
     <main id="screen-lobby" class="screen-view">
       <div class="lobby-top-bar">
         <div class="room-code-tag" id="copy-room-code-btn" title="Click to copy code">
@@ -87,41 +87,9 @@
         </button>
       </div>
 
-      <div class="lobby-seats-container">
-        <!-- Seat 1 (Host) -->
-        <div class="player-card active-seat" id="lobby-seat-1">
-          <div class="card-avatar" id="seat1-avatar">
-            <img src="" alt="Host Avatar" id="seat1-avatar-img">
-          </div>
-          <span class="card-name" id="seat1-name">Host Player</span>
-          <span class="status-pill ready" id="seat1-status">READY (HOST)</span>
-        </div>
-
-        <div class="vs-badge">VS</div>
-
-        <!-- Seat 2 (Opponent / Bot) -->
-        <div class="player-card" id="lobby-seat-2">
-          <div class="card-avatar" id="seat2-avatar">
-            <img src="" alt="Opponent Avatar" id="seat2-avatar-img">
-          </div>
-          <span class="card-name" id="seat2-name">Waiting for challenger...</span>
-          <span class="status-pill waiting" id="seat2-status">EMPTY</span>
-          <button class="term-btn btn-danger btn-kick" id="btn-kick-seat2" style="display:none; margin-top: 8px; padding: 4px 10px; font-size: 10px;">
-            <span>🚫</span> KICK PLAYER
-          </button>
-          <button class="term-btn" id="btn-lobby-add-bot" style="margin-top: 10px; padding: 6px 12px; font-size: 11px;">
-            <span>🤖</span>
-            <span>+ ADD AI BOT</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Spectator Roster (Up to 4 Spectators, Max 6 Room Total) -->
-      <div class="spectator-roster-panel">
-        <div class="roster-title">SPECTATOR BENCH (MAX 6 PLAYERS IN ROOM)</div>
-        <div class="spectator-slots-grid" id="spectator-slots-grid">
-          <div class="spectator-chip empty">EMPTY BENCH SLOT</div>
-        </div>
+      <!-- 6-Player Battle Lobby Seats Grid -->
+      <div class="multi-lobby-grid" id="multi-lobby-grid">
+        <!-- Dynamically rendered seats 1 through 6 -->
       </div>
 
       <!-- Lobby Settings (Host Only) -->
@@ -141,6 +109,10 @@
             <button class="toggle-choice" data-val="2">2 ITEMS</button>
           </div>
         </div>
+
+        <button class="term-btn" id="btn-lobby-fill-bots" style="padding: 6px 14px; font-size: 11px;">
+          <span>🤖</span> FILL EMPTY SEATS WITH BOTS
+        </button>
       </div>
 
       <div class="lobby-bottom-bar">
@@ -149,7 +121,7 @@
       </div>
     </main>
 
-    <!-- SCREEN 3: IN-GAME WORKBENCH HUD -->
+    <!-- SCREEN 3: IN-GAME WORKBENCH HUD (2 TO 6 PLAYERS) -->
     <main id="screen-game" class="screen-view">
       <!-- Top Wire Pool Tracker -->
       <div class="wire-pool-tracker">
@@ -175,9 +147,9 @@
         </div>
       </div>
 
-      <!-- Workbench Main Arena -->
+      <!-- Workbench Main Arena (N-Player Layout) -->
       <div class="workbench-arena">
-        <!-- Left: Player Station (You) -->
+        <!-- Left Column: Active Player Local Station (P1 / You) -->
         <div class="player-station" id="station-p1">
           <div id="p1-emote-bubble" class="emote-speech-bubble" style="display: none;">😏 I know what's in there</div>
           <div>
@@ -208,7 +180,7 @@
           </div>
         </div>
 
-        <!-- Center: Oscilloscope, Capacitor and Actions -->
+        <!-- Center Column: Oscilloscope, Target Selector and Actions -->
         <div class="central-console">
           <!-- Oscilloscope Viewport -->
           <div class="oscilloscope-panel">
@@ -219,11 +191,19 @@
             <canvas id="oscilloscope-canvas"></canvas>
           </div>
 
+          <!-- Target Picker Bar for Multi-Player Battles -->
+          <div class="target-picker-bar" id="target-picker-bar">
+            <span class="target-picker-label">TARGET RIVAL:</span>
+            <div class="target-chips-container" id="target-chips-container">
+              <!-- Dynamically rendered target chips -->
+            </div>
+          </div>
+
           <!-- Primary Shock Action Buttons -->
           <div class="primary-actions-dock">
             <button class="shock-btn shock-opponent-btn" id="btn-shock-opponent">
-              <span>⚡ SHOCK OPPONENT</span>
-              <span class="btn-sub" id="sub-shock-opponent">Target rival terminal (Damage if Live)</span>
+              <span>⚡ SHOCK TARGET RIVAL</span>
+              <span class="btn-sub" id="sub-shock-opponent">Discharge into selected target (Damage if Live)</span>
             </button>
 
             <button class="shock-btn shock-self-btn" id="btn-shock-self">
@@ -247,35 +227,9 @@
           </div>
         </div>
 
-        <!-- Right: Opponent Station (Rival / Bot) -->
-        <div class="player-station" id="station-p2">
-          <div id="p2-emote-bubble" class="emote-speech-bubble" style="display: none;">💀 Fire line</div>
-          <div>
-            <div class="station-header">
-              <div class="station-avatar">
-                <img src="" alt="Opponent Avatar" id="p2-hud-avatar">
-              </div>
-              <div>
-                <div class="station-name" id="p2-hud-name">Opponent</div>
-                <div style="font-size: 10px; color: var(--text-dim);" id="p2-hud-sub">TERMINAL P2</div>
-              </div>
-            </div>
-
-            <!-- Health Cells -->
-            <div class="voltage-meter-container">
-              <div class="voltage-label">
-                <span>VOLTAGE CAPACITY</span>
-                <span id="p2-hp-label">3 / 3 HP</span>
-              </div>
-              <div class="voltage-cells" id="p2-cells"></div>
-            </div>
-          </div>
-
-          <!-- Inventory Slots -->
-          <div class="inventory-container">
-            <div class="inventory-title">RIVAL TOOLBOX</div>
-            <div class="tool-slots" id="p2-tool-slots"></div>
-          </div>
+        <!-- Right Column: Other Rivals Grid (P2, P3, P4, P5, P6) -->
+        <div class="opponents-arena-grid" id="opponents-arena-grid">
+          <!-- Dynamically populated rival stations -->
         </div>
       </div>
     </main>
@@ -294,7 +248,7 @@
 
   <!-- ================= MODALS ================= -->
 
-  <!-- 1. ON-SCREEN VIRTUAL KEYBOARD MODAL (CUSTOM USERNAME ENTRY) -->
+  <!-- 1. ON-SCREEN VIRTUAL KEYBOARD MODAL -->
   <div class="modal-overlay" id="modal-virtual-keyboard">
     <div class="modal-dialog" style="max-width: 580px;">
       <div class="modal-header">
@@ -303,11 +257,8 @@
       </div>
       <div class="modal-body">
         <p style="font-size: 12px; color: var(--text-dim);">Tap the keys below to set your terminal handle (No device keyboard required):</p>
-
-        <!-- Readonly Display Box to prevent native keyboard popup -->
         <div class="virtual-input-display" id="vk-display">RUNNER_001</div>
 
-        <!-- Cyber Virtual QWERTY Keyboard -->
         <div class="virtual-keyboard-grid">
           <div class="vk-row">
             <button class="vk-key" data-key="Q">Q</button><button class="vk-key" data-key="W">W</button><button class="vk-key" data-key="E">E</button><button class="vk-key" data-key="R">R</button><button class="vk-key" data-key="T">T</button><button class="vk-key" data-key="Y">Y</button><button class="vk-key" data-key="U">U</button><button class="vk-key" data-key="I">I</button><button class="vk-key" data-key="O">O</button><button class="vk-key" data-key="P">P</button>
@@ -357,21 +308,21 @@
             <h3>🎲 THE SELF-SHOCK GAMBIT</h3>
             <p>On your turn, you have two primary choices:</p>
             <ul style="margin-left: 20px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-              <li><strong>Shock Opponent:</strong> If Live, deals damage and passes the turn. If Dud, no damage and passes the turn.</li>
+              <li><strong>Shock Opponent:</strong> Pick a rival target! If Live, deals damage and passes turn. If Dud, no damage and passes turn.</li>
               <li><strong>Shock Yourself:</strong> If Dud, you suffer no damage AND <strong style="color: var(--neon-cyan);">earn an extra turn immediately</strong>! If Live, you take damage and your turn ends.</li>
             </ul>
           </div>
 
           <div class="rules-card-content" id="rules-card-2" style="display:none;">
             <h3>🧰 TOOL ITEMS & STRATEGY</h3>
-            <p>1–2 items are added to your toolbox each round (max 4). Deploy them before shocking:</p>
+            <p>1–2 items are added to your toolbox each round (max 4). You can ONLY use items on your turn:</p>
             <div class="tool-preview-list">
               <div class="tool-preview-item"><span class="icon">📟</span> <strong>Multimeter:</strong> Secretly scan if the next wire is Live or Dud.</div>
               <div class="tool-preview-item"><span class="icon">✂️</span> <strong>Wire Cutters:</strong> Safely clip out the next wire without discharge.</div>
               <div class="tool-preview-item"><span class="icon">⚡</span> <strong>Voltage Booster:</strong> Doubles damage of next Live wire to 2 HP!</div>
-              <div class="tool-preview-item"><span class="icon">🧤</span> <strong>Insulated Glove:</strong> Ground your rival, skipping their next turn.</div>
-              <div class="tool-preview-item"><span class="icon">🔁</span> <strong>Circuit Tap:</strong> Recycles current wire to the back of the chamber.</div>
-              <div class="tool-preview-item"><span class="icon">📡</span> <strong>Signal Jammer:</strong> Blocks opponent from using items on their next turn.</div>
+              <div class="tool-preview-item"><span class="icon">🧤</span> <strong>Insulated Glove:</strong> Ground rival, skipping next player's turn.</div>
+              <div class="tool-preview-item"><span class="icon">🔁</span> <strong>Circuit Tap:</strong> Recycles current wire to the back of chamber.</div>
+              <div class="tool-preview-item"><span class="icon">📡</span> <strong>Signal Jammer:</strong> Blocks next rival from using items on their turn.</div>
             </div>
           </div>
         </div>
