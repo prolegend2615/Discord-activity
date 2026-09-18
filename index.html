@@ -18,7 +18,7 @@
       <div class="brand-title">
         <span class="logo-bolt">⚡</span>
         <h1>SHORT CIRCUIT</h1>
-        <span class="version-badge">v1.0-CYBER</span>
+        <span class="version-badge">v2.0-ULTRA</span>
       </div>
 
       <div class="user-profile-badge" id="profile-badge">
@@ -40,6 +40,9 @@
           <p class="hero-desc">
             Two runners. One experimental capacitor loaded with secret Live and Dud wires. Gamble on shocking yourself for bonus turns, or blast your rival with lethal single-use tools.
           </p>
+          <div style="margin-top: 8px;">
+            <span class="match-record-badge" id="main-menu-stats">RECORD: 0 WINS / 0 LOSSES</span>
+          </div>
         </div>
 
         <div class="menu-actions">
@@ -135,6 +138,8 @@
           <span>CHAMBER STATUS:</span>
           <span id="round-indicator" style="color: var(--neon-cyan); font-weight: bold;">ROUND 1</span>
           <span class="booster-indicator" id="hud-booster-tag">⚡ VOLTAGE BOOSTED (2x DMG)</span>
+          <span class="critical-timer-badge" id="critical-timer-tag" style="display: none;">CRITICAL VOLTAGE: 10s</span>
+          <span class="spectator-badge" id="hud-spectator-tag" style="display: none;">SPECTATOR MODE</span>
         </div>
 
         <div class="chamber-counts">
@@ -155,6 +160,7 @@
       <div class="workbench-arena">
         <!-- Left: Player Station (You) -->
         <div class="player-station" id="station-p1">
+          <div id="p1-emote-bubble" class="emote-speech-bubble" style="display: none;">😏 I know what's in there</div>
           <div>
             <div class="station-header">
               <div class="station-avatar">
@@ -162,7 +168,7 @@
               </div>
               <div>
                 <div class="station-name" id="p1-hud-name">You</div>
-                <div style="font-size: 10px; color: var(--text-dim);">TERMINAL P1</div>
+                <div style="font-size: 10px; color: var(--text-dim);" id="p1-hud-sub">TERMINAL P1</div>
               </div>
             </div>
 
@@ -207,6 +213,15 @@
             </button>
           </div>
 
+          <!-- Bluff Emote Buttons Dock -->
+          <div class="bluff-emote-dock">
+            <button class="emote-btn" data-emote="😏">😏</button>
+            <button class="emote-btn" data-emote="😰">😰</button>
+            <button class="emote-btn" data-emote="⚡">⚡</button>
+            <button class="emote-btn" data-emote="💀">💀</button>
+            <button class="emote-btn" data-emote="👑">👑</button>
+          </div>
+
           <!-- Combat Log Terminal -->
           <div class="combat-log-container" id="combat-log">
             <div class="log-entry">Terminal synchronized. Ready to engage.</div>
@@ -215,6 +230,7 @@
 
         <!-- Right: Opponent Station (Rival / Bot) -->
         <div class="player-station" id="station-p2">
+          <div id="p2-emote-bubble" class="emote-speech-bubble" style="display: none;">💀 Fire line</div>
           <div>
             <div class="station-header">
               <div class="station-avatar">
@@ -297,6 +313,8 @@
               <div class="tool-preview-item"><span class="icon">✂️</span> <strong>Wire Cutters:</strong> Safely clip out the next wire without discharge.</div>
               <div class="tool-preview-item"><span class="icon">⚡</span> <strong>Voltage Booster:</strong> Doubles damage of next Live wire to 2 HP!</div>
               <div class="tool-preview-item"><span class="icon">🧤</span> <strong>Insulated Glove:</strong> Ground your rival, skipping their next turn.</div>
+              <div class="tool-preview-item"><span class="icon">🔁</span> <strong>Circuit Tap:</strong> Recycles current wire to the back of the chamber.</div>
+              <div class="tool-preview-item"><span class="icon">📡</span> <strong>Signal Jammer:</strong> Blocks opponent from using items on their next turn.</div>
             </div>
           </div>
         </div>
@@ -395,6 +413,27 @@
       <div class="modal-footer" style="justify-content: center;">
         <button class="term-btn" id="btn-rematch">PLAY AGAIN</button>
         <button class="term-btn btn-primary" id="btn-match-over-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. MOBILE TOUCH ITEM CONFIRMATION MODAL -->
+  <div class="modal-overlay" id="modal-mobile-item">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>DEPLOY TOOLBOX ITEM</h2>
+        <button class="modal-close-btn" data-close="modal-mobile-item">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="mobile-item-card">
+          <div class="mobile-item-icon" id="mobile-item-icon">📟</div>
+          <div class="mobile-item-title" id="mobile-item-title">Multimeter</div>
+          <div class="mobile-item-desc" id="mobile-item-desc">Secretly scans current wire.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="term-btn btn-danger" style="padding: 8px 16px; font-size: 13px;" data-close="modal-mobile-item">CANCEL</button>
+        <button class="term-btn btn-primary" id="btn-confirm-mobile-use" style="padding: 8px 20px; font-size: 13px;">ACTIVATE TOOL</button>
       </div>
     </div>
   </div>

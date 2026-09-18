@@ -6,7 +6,7 @@ class CanvasFX {
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
     this.animationFrame = null;
     this.time = 0;
-    this.state = 'idle'; // 'idle', 'charging', 'shock', 'dud'
+    this.state = 'idle'; // 'idle', 'charging', 'buildup', 'shock', 'dud'
     this.particles = [];
     this.sparksCount = 0;
     this.screenShakeEnabled = true;
@@ -28,6 +28,17 @@ class CanvasFX {
 
   setState(newState) {
     this.state = newState;
+  }
+
+  triggerHitFlash(elementId, color = '#ff0055') {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.remove('hit-flash-active');
+    void el.offsetWidth; // Force reflow
+    el.classList.add('hit-flash-active');
+    setTimeout(() => {
+      el.classList.remove('hit-flash-active');
+    }, 450);
   }
 
   triggerSparks(xRatio = 0.5, yRatio = 0.5, count = 35, color = '#00ffcc') {
@@ -117,9 +128,13 @@ class CanvasFX {
       amp = 26 + Math.sin(this.time * 8) * 8;
       freq = 0.08;
       color = '#ffaa00';
+    } else if (this.state === 'buildup') {
+      amp = 36 + Math.sin(this.time * 16) * 16 + (Math.random() - 0.5) * 10;
+      freq = 0.12 + Math.sin(this.time * 6) * 0.04;
+      color = Math.sin(this.time * 10) > 0 ? '#ffaa00' : '#ff0055';
     } else if (this.state === 'shock') {
-      amp = 45 + (Math.random() - 0.5) * 20;
-      freq = 0.15;
+      amp = 50 + (Math.random() - 0.5) * 24;
+      freq = 0.18;
       color = '#ff0055';
     } else if (this.state === 'dud') {
       amp = 2;
@@ -128,7 +143,7 @@ class CanvasFX {
     }
 
     for (let x = 0; x < w; x += 3) {
-      const noise = (Math.random() - 0.5) * (this.state === 'shock' ? 12 : 2);
+      const noise = (Math.random() - 0.5) * (this.state === 'shock' ? 14 : (this.state === 'buildup' ? 8 : 2));
       const wave = Math.sin(x * freq + this.time * 4) * Math.cos(x * 0.01 + this.time) * amp;
       this.ctx.lineTo(x, midY + wave + noise);
     }

@@ -22,7 +22,8 @@ class GameEngine {
         avatar: options.p1?.avatar || null,
         hp: this.maxHp,
         items: [],
-        isBot: options.p1?.isBot || false
+        isBot: options.p1?.isBot || false,
+        isJammed: false
       },
       p2: {
         id: options.p2?.id || 'p2',
@@ -30,7 +31,8 @@ class GameEngine {
         avatar: options.p2?.avatar || null,
         hp: this.maxHp,
         items: [],
-        isBot: options.p2?.isBot || false
+        isBot: options.p2?.isBot || false,
+        isJammed: false
       }
     };
 
@@ -44,6 +46,7 @@ class GameEngine {
 
     this.onStateChangeCallbacks = [];
     this.onLogCallbacks = [];
+    this.onEmoteCallbacks = [];
   }
 
   onStateChange(cb) {
@@ -54,6 +57,10 @@ class GameEngine {
     this.onLogCallbacks.push(cb);
   }
 
+  onEmote(cb) {
+    this.onEmoteCallbacks.push(cb);
+  }
+
   emitStateChange(eventMeta = {}) {
     const snapshot = this.getSnapshot();
     this.onStateChangeCallbacks.forEach(cb => cb(snapshot, eventMeta));
@@ -62,6 +69,13 @@ class GameEngine {
   log(message, type = 'info') {
     this.history.push({ message, type, time: Date.now() });
     this.onLogCallbacks.forEach(cb => cb(message, type));
+  }
+
+  sendEmote(playerKey, emoteText) {
+    const sender = this.players[playerKey];
+    if (!sender) return;
+    this.onEmoteCallbacks.forEach(cb => cb({ playerKey, name: sender.name, emote: emoteText }));
+    this.log(`💬 ${sender.name}: "${emoteText}"`, 'emote');
   }
 
   getOpponentKey(key = this.activePlayerKey) {
@@ -85,6 +99,8 @@ class GameEngine {
     this.players.p2.hp = this.maxHp;
     this.players.p1.items = [];
     this.players.p2.items = [];
+    this.players.p1.isJammed = false;
+    this.players.p2.isJammed = false;
     this.activePlayerKey = 'p1';
     this.isBoosted = false;
     this.opponentStunned = false;
@@ -96,7 +112,6 @@ class GameEngine {
 
   // Generate wire pool for a new round
   generateWirePool(roundNumber) {
-    // Progressive wire mixes: balanced high-stakes odds
     const mixes = [
       { live: 1, dud: 2 }, // Total 3
       { live: 2, dud: 2 }, // Total 4
@@ -129,6 +144,8 @@ class GameEngine {
     this.isBoosted = false;
     this.opponentStunned = false;
     this.lastPeekedWire = null;
+    this.players.p1.isJammed = false;
+    this.players.p2.isJammed = false;
 
     // Grant items to both players (max 4 per player)
     ['p1', 'p2'].forEach(pKey => {
@@ -153,6 +170,10 @@ class GameEngine {
     if (playerKey !== this.activePlayerKey) return { success: false, reason: 'Not your turn' };
 
     const player = this.players[playerKey];
+    if (player.isJammed) {
+      return { success: false, reason: 'Toolbox jammed by Signal Jammer!' };
+    }
+
     if (itemIndex < 0 || itemIndex >= player.items.length) {
       return { success: false, reason: 'Invalid item index' };
     }
@@ -184,7 +205,6 @@ class GameEngine {
         result.cutWire = cutWire;
         this.log(`✂️ ${player.name} used WIRE CUTTERS! Safely snipped a ${cutWire} wire!`, 'item');
 
-        // Check if chamber emptied
         if (this.chamber.length === 0) {
           this.startNewRound();
         }
@@ -201,6 +221,26 @@ class GameEngine {
         this.opponentStunned = true;
         const opp = this.getOpponentPlayer();
         this.log(`🧤 ${player.name} equipped INSULATED GLOVE! ${opp.name}'s next turn will be SKIPPED!`, 'item');
+        break;
+      }
+
+      case 'circuit_tap': {
+        if (this.chamber.length > 1) {
+          const shiftedWire = this.chamber.shift();
+          this.chamber.push(shiftedWire);
+          this.lastPeekedWire = null;
+          this.log(`🔁 ${player.name} activated CIRCUIT TAP! Current wire recycled to back of chamber.`, 'item');
+        } else {
+          this.log(`🔁 ${player.name} activated CIRCUIT TAP (only 1 wire remaining).`, 'item');
+        }
+        break;
+      }
+
+      case 'signal_jammer': {
+        const oppKey = this.getOpponentKey(playerKey);
+        const opp = this.players[oppKey];
+        opp.isJammed = true;
+        this.log(`📡 ${player.name} deployed SIGNAL JAMMER! ${opp.name}'s toolbox is JAMMED for next turn!`, 'item');
         break;
       }
     }
@@ -263,9 +303,11 @@ class GameEngine {
       this.log(`🧤 ${target.name}'s turn was SKIPPED by Insulated Glove! ${shooter.name} continues!`, 'stun');
     } else {
       this.activePlayerKey = targetKey;
+      // Clear jammer status on target now that turn passes to them
+      target.isJammed = shooter.isJammed ? false : target.isJammed;
+      shooter.isJammed = false;
     }
 
-    // Check chamber status
     const chamberEmpty = this.chamber.length === 0;
     this.emitStateChange({
       type: 'ACTION_SHOCK_OPPONENT',
@@ -334,6 +376,8 @@ class GameEngine {
         this.log(`🧤 Stun consumed! ${shooter.name} keeps turn despite self-shock!`, 'stun');
       } else {
         this.activePlayerKey = targetKey;
+        opponent.isJammed = shooter.isJammed ? false : opponent.isJammed;
+        shooter.isJammed = false;
       }
     } else {
       // DUD! Free bonus turn!
@@ -341,7 +385,7 @@ class GameEngine {
       extraTurn = true;
       this.isBoosted = false;
       this.log(`*CLICK* DUD WIRE! ${shooter.name} survived self-shock and EARNS AN EXTRA TURN!`, 'shock-dud');
-      // Player retains activePlayerKey
+      // Retain active turn & jammer state
     }
 
     const chamberEmpty = this.chamber.length === 0;
@@ -363,6 +407,7 @@ class GameEngine {
   }
 
   getSnapshot() {
+    const isCritical = (this.players.p1.hp <= 1 || this.players.p2.hp <= 1);
     return {
       round: this.round,
       maxHp: this.maxHp,
@@ -372,6 +417,7 @@ class GameEngine {
       dudCount: this.dudCount,
       isBoosted: this.isBoosted,
       opponentStunned: this.opponentStunned,
+      isCriticalVoltage: isCritical,
       activePlayerKey: this.activePlayerKey,
       gameOver: this.gameOver,
       winner: this.winner,
@@ -382,7 +428,8 @@ class GameEngine {
           avatar: this.players.p1.avatar,
           hp: this.players.p1.hp,
           items: [...this.players.p1.items],
-          isBot: this.players.p1.isBot
+          isBot: this.players.p1.isBot,
+          isJammed: this.players.p1.isJammed
         },
         p2: {
           id: this.players.p2.id,
@@ -390,7 +437,8 @@ class GameEngine {
           avatar: this.players.p2.avatar,
           hp: this.players.p2.hp,
           items: [...this.players.p2.items],
-          isBot: this.players.p2.isBot
+          isBot: this.players.p2.isBot,
+          isJammed: this.players.p2.isJammed
         }
       }
     };

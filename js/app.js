@@ -1,17 +1,22 @@
-// Main Application Controller for Short Circuit
+// Main Application Controller for Short Circuit - v2.0 Ultra Polish
 
 class ShortCircuitApp {
   constructor() {
     this.currentUser = null;
     this.currentMode = 'menu'; // 'menu', 'lobby', 'game'
     this.isBotGame = false;
-    this.lobbyRole = 'host';
+    this.lobbyRole = 'host'; // 'host', 'opponent', 'spectator'
     this.lobbySettings = { maxHp: 3, itemsPerRound: 1 };
     this.lobbyOpponent = null;
 
     this.engine = null;
     this.botAI = null;
     this.canvasFX = null;
+
+    this.criticalTimer = null;
+    this.criticalTimeLeft = 10;
+
+    this.mobilePendingItem = null;
 
     this.init();
   }
@@ -23,6 +28,7 @@ class ShortCircuitApp {
     // 2. Initialize Discord Bridge & Player profile
     this.currentUser = await window.discordBridge.init();
     this.updateHeaderProfile();
+    this.updateMainMenuRecord();
 
     // 3. Attach UI Event Listeners
     this.setupEventListeners();
@@ -46,6 +52,33 @@ class ShortCircuitApp {
       if (statusEl) {
         statusEl.textContent = this.currentUser.isDiscordUser ? 'DISCORD CONNECTED' : 'TERMINAL READY';
       }
+    }
+  }
+
+  getRecord() {
+    try {
+      const data = localStorage.getItem('SC_MATCH_RECORD');
+      return data ? JSON.parse(data) : { wins: 0, losses: 0 };
+    } catch (e) {
+      return { wins: 0, losses: 0 };
+    }
+  }
+
+  saveRecord(isWin) {
+    const rec = this.getRecord();
+    if (isWin) rec.wins++;
+    else rec.losses++;
+    try {
+      localStorage.setItem('SC_MATCH_RECORD', JSON.stringify(rec));
+    } catch (e) {}
+    this.updateMainMenuRecord();
+  }
+
+  updateMainMenuRecord() {
+    const rec = this.getRecord();
+    const statsEl = document.getElementById('main-menu-stats');
+    if (statsEl) {
+      statsEl.textContent = `RECORD: ${rec.wins} WINS / ${rec.losses} LOSSES`;
     }
   }
 
@@ -245,7 +278,6 @@ class ShortCircuitApp {
       if (this.lobbyOpponent?.isBot) {
         this.launchGame(this.currentUser, this.lobbyOpponent, this.lobbySettings);
       } else {
-        // Multiplayer Start
         window.multiplayerManager.sendStartMatch({});
       }
     });
@@ -264,6 +296,24 @@ class ShortCircuitApp {
 
     document.getElementById('btn-shock-self')?.addEventListener('click', () => {
       this.handlePlayerShock(true);
+    });
+
+    // Bluff Emote Buttons
+    document.querySelectorAll('.bluff-emote-dock .emote-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const emote = btn.dataset.emote;
+        this.triggerEmote('p1', emote);
+      });
+    });
+
+    // Mobile Item Modal Confirm
+    document.getElementById('btn-confirm-mobile-use')?.addEventListener('click', () => {
+      this.closeModal('modal-mobile-item');
+      if (this.mobilePendingItem) {
+        const { playerKey, itemIndex, itemType } = this.mobilePendingItem;
+        this.executeItemUse(playerKey, itemIndex, itemType);
+        this.mobilePendingItem = null;
+      }
     });
 
     // Match Over Buttons
@@ -293,6 +343,28 @@ class ShortCircuitApp {
   closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.remove('active');
+  }
+
+  triggerEmote(playerKey, emoteText) {
+    window.soundFX.playEmote();
+    const bubble = document.getElementById(`${playerKey}-emote-bubble`);
+    if (bubble) {
+      bubble.textContent = `${emoteText}`;
+      bubble.style.display = 'block';
+      setTimeout(() => {
+        bubble.style.display = 'none';
+      }, 2500);
+    }
+    if (this.engine) {
+      this.engine.sendEmote(playerKey, emoteText);
+    }
+    if (!this.isBotGame && window.multiplayerManager) {
+      window.multiplayerManager.sendGameAction({
+        type: 'EMOTE',
+        playerKey,
+        emoteText
+      }, this.currentUser.id);
+    }
   }
 
   // Quick Start vs AI Bot
@@ -428,7 +500,11 @@ class ShortCircuitApp {
     });
 
     this.engine.onLog((msg, type) => {
-      this.appendCombatLog(msg, type);
+      this.appendCombatLogTypewriter(msg, type);
+    });
+
+    this.engine.onEmote(({ playerKey, name, emote }) => {
+      this.triggerEmote(playerKey, emote);
     });
 
     // Multiplayer relay listener
@@ -441,6 +517,8 @@ class ShortCircuitApp {
             this.engine.shockSelf(action.playerKey);
           } else if (action.type === 'USE_ITEM') {
             this.engine.useItem(action.playerKey, action.itemIndex);
+          } else if (action.type === 'EMOTE') {
+            this.triggerEmote(action.playerKey, action.emoteText);
           }
         }
       };
@@ -452,20 +530,34 @@ class ShortCircuitApp {
 
     // Switch to game screen
     this.switchScreen('screen-game');
+
+    // Start ambient music
+    const liveRatio = this.engine.liveCount / (this.engine.liveCount + this.engine.dudCount || 1);
+    window.soundFX.startAmbient(liveRatio);
     window.soundFX.playChamberReload();
 
     // Start engine match
     this.engine.startMatch();
   }
 
-  appendCombatLog(text, type = 'info') {
+  // Typewriter Combat Log Entry
+  appendCombatLogTypewriter(text, type = 'info') {
     const log = document.getElementById('combat-log');
     if (!log) return;
     const entry = document.createElement('div');
     entry.className = `log-entry ${type}`;
-    entry.textContent = text;
     log.appendChild(entry);
-    log.scrollTop = log.scrollHeight;
+
+    let idx = 0;
+    const interval = setInterval(() => {
+      if (idx < text.length) {
+        entry.textContent += text.charAt(idx);
+        idx++;
+        log.scrollTop = log.scrollHeight;
+      } else {
+        clearInterval(interval);
+      }
+    }, 14);
   }
 
   // Render complete HUD state
@@ -475,16 +567,32 @@ class ShortCircuitApp {
     const dudEl = document.getElementById('hud-dud-count');
     const roundEl = document.getElementById('round-indicator');
     const boosterTag = document.getElementById('hud-booster-tag');
+    const spectatorTag = document.getElementById('hud-spectator-tag');
+    const criticalTag = document.getElementById('critical-timer-tag');
 
     if (liveEl) liveEl.textContent = state.liveCount;
     if (dudEl) dudEl.textContent = state.dudCount;
     if (roundEl) roundEl.textContent = `ROUND ${state.round}`;
     if (boosterTag) {
-      if (state.isBoosted) {
-        boosterTag.classList.add('active');
-      } else {
-        boosterTag.classList.remove('active');
-      }
+      if (state.isBoosted) boosterTag.classList.add('active');
+      else boosterTag.classList.remove('active');
+    }
+
+    if (spectatorTag) {
+      spectatorTag.style.display = (this.lobbyRole === 'spectator') ? 'inline-block' : 'none';
+    }
+
+    // Update ambient music intensity based on wire ratio
+    const totalRemaining = state.liveCount + state.dudCount;
+    if (totalRemaining > 0) {
+      window.soundFX.updateAmbientIntensity(state.liveCount / totalRemaining);
+    }
+
+    // Tension layer on <= 1 HP
+    if (state.isCriticalVoltage) {
+      window.soundFX.startTension();
+    } else {
+      window.soundFX.stopTension();
     }
 
     // 2. Player 1 Station
@@ -493,7 +601,7 @@ class ShortCircuitApp {
     document.getElementById('p1-hud-avatar').src = p1.avatar || window.discordBridge.generateNeonAvatar(p1.name);
     document.getElementById('p1-hp-label').textContent = `${p1.hp} / ${state.maxHp} HP`;
     this.renderHealthCells('p1-cells', p1.hp, state.maxHp);
-    this.renderInventory('p1-tool-slots', p1.items, 'p1');
+    this.renderInventory('p1-tool-slots', p1.items, 'p1', p1.isJammed);
 
     // 3. Player 2 Station
     const p2 = state.players.p2;
@@ -501,11 +609,18 @@ class ShortCircuitApp {
     document.getElementById('p2-hud-avatar').src = p2.avatar || window.discordBridge.generateNeonAvatar(p2.name, p2.isBot);
     document.getElementById('p2-hp-label').textContent = `${p2.hp} / ${state.maxHp} HP`;
     this.renderHealthCells('p2-cells', p2.hp, state.maxHp);
-    this.renderInventory('p2-tool-slots', p2.items, 'p2');
+    this.renderInventory('p2-tool-slots', p2.items, 'p2', p2.isJammed);
 
-    // 4. Turn Indicators
+    // Critical Voltage Styling & Timer
     const station1 = document.getElementById('station-p1');
     const station2 = document.getElementById('station-p2');
+    if (p1.hp <= 1) station1?.classList.add('critical-voltage-active');
+    else station1?.classList.remove('critical-voltage-active');
+
+    if (p2.hp <= 1) station2?.classList.add('critical-voltage-active');
+    else station2?.classList.remove('critical-voltage-active');
+
+    // Turn Indicators & Critical Timer
     const oscStatus = document.getElementById('osc-status-text');
 
     if (state.activePlayerKey === 'p1') {
@@ -524,16 +639,59 @@ class ShortCircuitApp {
       }
     }
 
+    // Manage 10-Second Critical Voltage Timer for Active Player
+    this.manageCriticalTimer(state);
+
     // 5. Button enable / disable
     const isMyTurn = this.isBotGame
       ? state.activePlayerKey === 'p1'
-      : (this.lobbyRole === 'host' ? state.activePlayerKey === 'p1' : state.activePlayerKey === 'p2');
+      : (this.lobbyRole === 'host' ? state.activePlayerKey === 'p1' : (this.lobbyRole === 'opponent' ? state.activePlayerKey === 'p2' : false));
 
     const shockOpponentBtn = document.getElementById('btn-shock-opponent');
     const shockSelfBtn = document.getElementById('btn-shock-self');
 
     if (shockOpponentBtn) shockOpponentBtn.disabled = !isMyTurn || state.gameOver;
     if (shockSelfBtn) shockSelfBtn.disabled = !isMyTurn || state.gameOver;
+  }
+
+  manageCriticalTimer(state) {
+    const criticalTag = document.getElementById('critical-timer-tag');
+    const activePlayer = state.players[state.activePlayerKey];
+
+    if (activePlayer && activePlayer.hp <= 1 && !state.gameOver) {
+      if (criticalTag) {
+        criticalTag.style.display = 'inline-block';
+        criticalTag.textContent = `CRITICAL VOLTAGE: ${this.criticalTimeLeft}s`;
+      }
+
+      if (!this.criticalTimer) {
+        this.criticalTimeLeft = 10;
+        this.criticalTimer = setInterval(() => {
+          this.criticalTimeLeft--;
+          window.soundFX.playCriticalAlarm();
+          if (criticalTag) criticalTag.textContent = `CRITICAL VOLTAGE: ${this.criticalTimeLeft}s`;
+
+          if (this.criticalTimeLeft <= 0) {
+            clearInterval(this.criticalTimer);
+            this.criticalTimer = null;
+            // Timeout auto-action: shock opponent
+            const isMyTurn = this.isBotGame
+              ? state.activePlayerKey === 'p1'
+              : (this.lobbyRole === 'host' ? state.activePlayerKey === 'p1' : state.activePlayerKey === 'p2');
+            if (isMyTurn && !state.gameOver) {
+              this.showToast('TIME EXPIRED! AUTO-DISCHARGING NODE!');
+              this.handlePlayerShock(false);
+            }
+          }
+        }, 1000);
+      }
+    } else {
+      if (this.criticalTimer) {
+        clearInterval(this.criticalTimer);
+        this.criticalTimer = null;
+      }
+      if (criticalTag) criticalTag.style.display = 'none';
+    }
   }
 
   renderHealthCells(containerId, currentHp, maxHp) {
@@ -557,36 +715,52 @@ class ShortCircuitApp {
     }
   }
 
-  renderInventory(containerId, items, playerKey) {
+  renderInventory(containerId, items, playerKey, isJammed = false) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
 
     const isMyTurn = this.isBotGame
       ? this.engine.activePlayerKey === 'p1'
-      : (this.lobbyRole === 'host' ? this.engine.activePlayerKey === 'p1' : this.engine.activePlayerKey === 'p2');
+      : (this.lobbyRole === 'host' ? this.engine.activePlayerKey === 'p1' : (this.lobbyRole === 'opponent' ? this.engine.activePlayerKey === 'p2' : false));
 
-    const canUse = (playerKey === 'p1' && isMyTurn && !this.engine.gameOver);
+    const isSpectator = (this.lobbyRole === 'spectator');
+    const isEnemyView = (playerKey === 'p2' && !isSpectator);
+    const canUse = (playerKey === 'p1' && isMyTurn && !this.engine.gameOver && !isJammed);
 
     for (let i = 0; i < 4; i++) {
       const slot = document.createElement('div');
       slot.className = 'tool-slot';
 
+      if (isJammed) slot.classList.add('jammed-slot');
+
       if (i < items.length) {
-        const itemType = items[i];
-        const itemDef = window.ITEMS[itemType];
-        slot.textContent = itemDef?.icon || '⚙️';
-        slot.title = `${itemDef?.name || itemType}: ${itemDef?.description || ''}`;
+        if (isSpectator) {
+          // Mask spectator slots
+          slot.textContent = '❓';
+          slot.classList.add('masked');
+        } else {
+          const itemType = items[i];
+          const itemDef = window.ITEMS[itemType];
+          slot.textContent = itemDef?.icon || '⚙️';
+          slot.title = `${itemDef?.name || itemType}: ${itemDef?.description || ''}`;
 
-        const badge = document.createElement('span');
-        badge.className = 'slot-badge';
-        badge.textContent = itemDef?.shortName || '';
-        slot.appendChild(badge);
+          const badge = document.createElement('span');
+          badge.className = 'slot-badge';
+          badge.textContent = itemDef?.shortName || '';
+          slot.appendChild(badge);
 
-        if (canUse) {
-          slot.addEventListener('click', () => {
-            this.handleItemUse(playerKey, i, itemType);
-          });
+          if (canUse) {
+            slot.addEventListener('click', () => {
+              // Check mobile touch screen or desktop
+              if (window.innerWidth < 640) {
+                this.mobilePendingItem = { playerKey, itemIndex: i, itemType };
+                this.showMobileItemModal(itemDef);
+              } else {
+                this.executeItemUse(playerKey, i, itemType);
+              }
+            });
+          }
         }
       } else {
         slot.classList.add('empty');
@@ -596,15 +770,25 @@ class ShortCircuitApp {
     }
   }
 
-  // Handle Item Activation
-  handleItemUse(playerKey, itemIndex, itemType) {
+  showMobileItemModal(itemDef) {
+    const icon = document.getElementById('mobile-item-icon');
+    const title = document.getElementById('mobile-item-title');
+    const desc = document.getElementById('mobile-item-desc');
+    if (icon) icon.textContent = itemDef.icon;
+    if (title) title.textContent = itemDef.name;
+    if (desc) desc.textContent = itemDef.description;
+    this.openModal('modal-mobile-item');
+  }
+
+  executeItemUse(playerKey, itemIndex, itemType) {
     window.soundFX.playClick();
 
-    // Execute on engine
     const res = this.engine.useItem(playerKey, itemIndex);
-    if (!res || !res.success) return;
+    if (!res || !res.success) {
+      if (res?.reason) this.showToast(res.reason);
+      return;
+    }
 
-    // Relay over network if multiplayer
     if (!this.isBotGame && window.multiplayerManager) {
       window.multiplayerManager.sendGameAction({
         type: 'USE_ITEM',
@@ -613,7 +797,7 @@ class ShortCircuitApp {
       }, this.currentUser.id);
     }
 
-    // Play appropriate sound
+    // Play appropriate sound & animation
     if (itemType === 'multimeter') {
       window.soundFX.playScannerBeep(res.peek === 'LIVE');
       this.showSecretPeek(res.peek);
@@ -625,10 +809,13 @@ class ShortCircuitApp {
       window.soundFX.playBooster();
     } else if (itemType === 'insulated_glove') {
       window.soundFX.playGlove();
+    } else if (itemType === 'circuit_tap') {
+      window.soundFX.playCircuitTap();
+    } else if (itemType === 'signal_jammer') {
+      window.soundFX.playJammer();
     }
   }
 
-  // Secret Peek Popup for Multimeter
   showSecretPeek(wireType) {
     const toast = document.getElementById('peek-toast');
     const icon = document.getElementById('peek-icon');
@@ -651,7 +838,7 @@ class ShortCircuitApp {
     }, 2200);
   }
 
-  // Handle Player Primary Shock
+  // Handle Player Primary Shock with 3-Second Intense Buildup Beat Sequence
   async handlePlayerShock(isSelf) {
     const playerKey = this.isBotGame
       ? 'p1'
@@ -659,9 +846,15 @@ class ShortCircuitApp {
 
     if (this.engine.activePlayerKey !== playerKey || this.engine.gameOver) return;
 
-    // Disable buttons
+    // Disable buttons immediately
     document.getElementById('btn-shock-opponent').disabled = true;
     document.getElementById('btn-shock-self').disabled = true;
+
+    // Clear critical timer during resolution
+    if (this.criticalTimer) {
+      clearInterval(this.criticalTimer);
+      this.criticalTimer = null;
+    }
 
     // Relay action if multiplayer
     if (!this.isBotGame && window.multiplayerManager) {
@@ -671,12 +864,19 @@ class ShortCircuitApp {
       }, this.currentUser.id);
     }
 
-    // Capacitor charge visual & audio effect
-    window.soundFX.playCapacitorHum(0.6);
-    this.canvasFX.setState('charging');
+    // ── 3-SECOND INTENSE BEAT BUILDUP & REVEAL SEQUENCE ──────────────────────
+    const oscStatus = document.getElementById('osc-status-text');
+    if (oscStatus) {
+      oscStatus.textContent = '⚡ CHARGING NODE... DISCHARGING IN 3s';
+      oscStatus.style.color = 'var(--neon-amber)';
+    }
 
-    await this.delay(650);
+    this.canvasFX.setState('buildup');
 
+    // Play procedural 3-second intense buildup beat
+    await window.soundFX.playIntenseRevealBeat(3000);
+
+    // ── REVEAL MOMENT ────────────────────────────────────────────────────────
     if (isSelf) {
       this.engine.shockSelf(playerKey);
     } else {
@@ -686,19 +886,23 @@ class ShortCircuitApp {
 
   // Handle game events and animations
   async handleGameEvents(snapshot, eventMeta) {
-    const { type, isLive, damage, wasBoosted, extraTurn } = eventMeta;
+    const { type, isLive, damage, wasBoosted, extraTurn, shooterKey, targetKey } = eventMeta;
 
     if (type === 'ACTION_SHOCK_OPPONENT' || type === 'ACTION_SHOCK_SELF') {
       if (isLive) {
         window.soundFX.playShockZap(wasBoosted);
         this.canvasFX.setState('shock');
-        this.canvasFX.triggerSparks(0.5, 0.5, wasBoosted ? 50 : 30, '#ff0055');
+        this.canvasFX.triggerSparks(0.5, 0.5, wasBoosted ? 55 : 35, '#ff0055');
+
+        // Trigger red hit flash overlay on target station!
+        const hitTargetStation = (targetKey === 'p1') ? 'station-p1' : (type === 'ACTION_SHOCK_SELF' ? (shooterKey === 'p1' ? 'station-p1' : 'station-p2') : 'station-p2');
+        this.canvasFX.triggerHitFlash(hitTargetStation, '#ff0055');
       } else {
         window.soundFX.playDudClick();
         this.canvasFX.setState('dud');
       }
 
-      await this.delay(600);
+      await this.delay(650);
       this.canvasFX.setState('idle');
 
       if (extraTurn) {
@@ -720,6 +924,14 @@ class ShortCircuitApp {
   }
 
   showMatchOver(snapshot) {
+    window.soundFX.stopAmbient();
+    window.soundFX.stopTension();
+
+    if (this.criticalTimer) {
+      clearInterval(this.criticalTimer);
+      this.criticalTimer = null;
+    }
+
     const winnerKey = snapshot.winner;
     const winner = snapshot.players[winnerKey];
     const isPlayer1Winner = (winnerKey === 'p1');
@@ -734,7 +946,12 @@ class ShortCircuitApp {
 
     const amIWinner = this.isBotGame
       ? isPlayer1Winner
-      : (this.lobbyRole === 'host' ? isPlayer1Winner : !isPlayer1Winner);
+      : (this.lobbyRole === 'host' ? isPlayer1Winner : (this.lobbyRole === 'opponent' ? !isPlayer1Winner : false));
+
+    // Save persistent match statistics
+    if (this.lobbyRole !== 'spectator') {
+      this.saveRecord(amIWinner);
+    }
 
     if (amIWinner) {
       winnerTitle.textContent = 'VICTORY ACHIEVED';

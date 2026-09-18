@@ -1280,3 +1280,143 @@ input:checked + .slider:before {
     font-size: 18px;
   }
 }
+
+/* Hit Flash Overlay */
+@keyframes hit-flash {
+  0% { background-color: rgba(255, 0, 85, 0.45); }
+  100% { background-color: transparent; }
+}
+
+.player-station.hit-flash-active {
+  animation: hit-flash 0.45s ease-out;
+}
+
+/* Critical Voltage Pulsing Border & Timer Badge */
+@keyframes critical-pulse {
+  0% { border-color: var(--neon-pink); box-shadow: 0 0 10px rgba(255, 0, 85, 0.4); }
+  50% { border-color: #ff5500; box-shadow: 0 0 24px rgba(255, 85, 0, 0.8); }
+  100% { border-color: var(--neon-pink); box-shadow: 0 0 10px rgba(255, 0, 85, 0.4); }
+}
+
+.player-station.critical-voltage-active {
+  animation: critical-pulse 1s infinite alternate;
+}
+
+.critical-timer-badge {
+  background: rgba(255, 0, 85, 0.2);
+  border: 1px solid var(--neon-pink);
+  color: var(--neon-pink);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 4px;
+  animation: critical-pulse 0.8s infinite alternate;
+}
+
+/* Jammed Toolbox Indicator */
+.tool-slot.jammed-slot {
+  opacity: 0.3;
+  filter: grayscale(1);
+  cursor: not-allowed !important;
+}
+
+.jammed-badge {
+  font-size: 9px;
+  color: var(--neon-pink);
+  font-weight: bold;
+}
+
+/* Spectator Mode Styles */
+.spectator-badge {
+  background: rgba(189, 0, 255, 0.2);
+  border: 1px solid var(--neon-purple);
+  color: var(--neon-purple);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.tool-slot.masked {
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: default;
+}
+
+/* Bluff Emote Dock & Floating Speech Bubbles */
+.bluff-emote-dock {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.emote-btn {
+  background: rgba(20, 29, 51, 0.8);
+  border: 1px solid var(--border-dim);
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emote-btn:hover {
+  border-color: var(--neon-cyan);
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(0, 255, 204, 0.4);
+}
+
+.emote-speech-bubble {
+  position: absolute;
+  top: -38px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-panel-light);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 12px;
+  white-space: nowrap;
+  box-shadow: 0 0 12px rgba(0, 255, 204, 0.3);
+  z-index: 40;
+  animation: modal-zoom 0.2s ease;
+}
+
+/* Match Record Badge on Main Menu */
+.match-record-badge {
+  font-size: 11px;
+  color: var(--neon-green);
+  border: 1px solid var(--border-dim);
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(57, 255, 20, 0.1);
+}
+
+/* Mobile Item Details Sheet */
+.mobile-item-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.mobile-item-icon {
+  font-size: 42px;
+}
+
+.mobile-item-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--neon-amber);
+}
+
+.mobile-item-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
