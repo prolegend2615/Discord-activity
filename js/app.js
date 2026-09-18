@@ -1,4 +1,4 @@
-// Main Application Controller for Short Circuit - v2.0 Ultra Polish
+// Main Application Controller for Short Circuit - v2.0 Ultra Polish & Virtual Keyboard
 
 class ShortCircuitApp {
   constructor() {
@@ -8,6 +8,7 @@ class ShortCircuitApp {
     this.lobbyRole = 'host'; // 'host', 'opponent', 'spectator'
     this.lobbySettings = { maxHp: 3, itemsPerRound: 1 };
     this.lobbyOpponent = null;
+    this.lobbySpectators = [];
 
     this.engine = null;
     this.botAI = null;
@@ -15,8 +16,9 @@ class ShortCircuitApp {
 
     this.criticalTimer = null;
     this.criticalTimeLeft = 10;
-
     this.mobilePendingItem = null;
+
+    this.vkBuffer = '';
 
     this.init();
   }
@@ -27,11 +29,19 @@ class ShortCircuitApp {
 
     // 2. Initialize Discord Bridge & Player profile
     this.currentUser = await window.discordBridge.init();
+
+    // Check for custom saved handle
+    const savedHandle = localStorage.getItem('SC_USER_HANDLE');
+    if (savedHandle && savedHandle.trim().length > 0) {
+      this.currentUser.username = savedHandle.trim();
+    }
+
     this.updateHeaderProfile();
     this.updateMainMenuRecord();
 
-    // 3. Attach UI Event Listeners
+    // 3. Attach UI Event Listeners & Virtual Keyboard
     this.setupEventListeners();
+    this.setupVirtualKeyboard();
 
     // 4. Check URL for join code (e.g. ?room=X7K9P)
     const urlParams = new URLSearchParams(window.location.search);
@@ -52,6 +62,77 @@ class ShortCircuitApp {
       if (statusEl) {
         statusEl.textContent = this.currentUser.isDiscordUser ? 'DISCORD CONNECTED' : 'TERMINAL READY';
       }
+    }
+  }
+
+  setupVirtualKeyboard() {
+    this.vkBuffer = this.currentUser ? this.currentUser.username : 'RUNNER_001';
+    this.updateVKDisplay();
+
+    // Letter / symbol key presses
+    document.querySelectorAll('.vk-key[data-key]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        window.soundFX?.playClick();
+        if (this.vkBuffer.length < 16) {
+          const char = btn.getAttribute('data-key');
+          this.vkBuffer += char;
+          this.updateVKDisplay();
+        }
+      });
+    });
+
+    // Special VK actions
+    document.getElementById('vk-btn-clear')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      this.vkBuffer = '';
+      this.updateVKDisplay();
+    });
+
+    document.getElementById('vk-btn-backspace')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      this.vkBuffer = this.vkBuffer.slice(0, -1);
+      this.updateVKDisplay();
+    });
+
+    document.getElementById('vk-btn-space')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      if (this.vkBuffer.length < 16) {
+        this.vkBuffer += ' ';
+        this.updateVKDisplay();
+      }
+    });
+
+    document.getElementById('vk-btn-submit')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      const newHandle = this.vkBuffer.trim();
+      if (newHandle.length > 0) {
+        this.currentUser.username = newHandle;
+        localStorage.setItem('SC_USER_HANDLE', newHandle);
+        this.updateHeaderProfile();
+        this.closeModal('modal-virtual-keyboard');
+        this.showToast(`Handle updated to ${newHandle}!`);
+      }
+    });
+
+    document.getElementById('btn-edit-username')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      this.vkBuffer = this.currentUser.username;
+      this.updateVKDisplay();
+      this.openModal('modal-virtual-keyboard');
+    });
+
+    document.getElementById('btn-menu-virtual-kb')?.addEventListener('click', () => {
+      window.soundFX?.playClick();
+      this.vkBuffer = this.currentUser.username;
+      this.updateVKDisplay();
+      this.openModal('modal-virtual-keyboard');
+    });
+  }
+
+  updateVKDisplay() {
+    const disp = document.getElementById('vk-display');
+    if (disp) {
+      disp.textContent = this.vkBuffer.length > 0 ? this.vkBuffer : '_';
     }
   }
 
@@ -249,6 +330,19 @@ class ShortCircuitApp {
       this.updateLobbyUI();
     });
 
+    // Lobby: Kick Seat 2 (Host Only)
+    document.getElementById('btn-kick-seat2')?.addEventListener('click', () => {
+      if (this.lobbyRole !== 'host') return;
+      window.soundFX.playClick();
+      if (this.lobbyOpponent) {
+        if (!this.lobbyOpponent.isBot && window.multiplayerManager) {
+          window.multiplayerManager.sendKickPlayer(this.lobbyOpponent.id);
+        }
+        this.lobbyOpponent = null;
+        this.updateLobbyUI();
+      }
+    });
+
     // Lobby: Settings Toggles (HP & Items)
     document.querySelectorAll('#hp-toggle-group .toggle-choice').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -384,6 +478,7 @@ class ShortCircuitApp {
     this.isBotGame = false;
     this.lobbyRole = 'host';
     this.lobbyOpponent = null;
+    this.lobbySpectators = [];
 
     const randomRoomId = Math.random().toString(36).substring(2, 7).toUpperCase();
     const roomState = window.multiplayerManager.initRoom(randomRoomId, this.currentUser, true, this.lobbySettings);
@@ -395,7 +490,7 @@ class ShortCircuitApp {
     document.getElementById('seat1-name').textContent = this.currentUser.username;
     document.getElementById('seat1-status').textContent = 'READY (HOST)';
 
-    // Reset Opponent seat
+    // Reset Opponent seat & roster
     this.updateLobbyUI();
 
     // Attach multiplayer callbacks
@@ -406,7 +501,13 @@ class ShortCircuitApp {
       } else if (!this.lobbyOpponent?.isBot) {
         this.lobbyOpponent = null;
       }
+      this.lobbySpectators = state.spectators || [];
       this.updateLobbyUI();
+    };
+
+    window.multiplayerManager.onKicked = (msg) => {
+      this.showToast(msg || 'You were kicked from the room.');
+      this.switchScreen('screen-main-menu');
     };
 
     window.multiplayerManager.onMatchStart = (payload) => {
@@ -434,11 +535,18 @@ class ShortCircuitApp {
     document.getElementById('btn-start-match').style.display = 'none';
 
     window.multiplayerManager.onRoomUpdate = (state, role) => {
+      this.lobbyRole = role;
       if (state.host) {
         document.getElementById('seat1-avatar-img').src = state.host.avatar || window.discordBridge.generateNeonAvatar(state.host.name);
         document.getElementById('seat1-name').textContent = state.host.name;
       }
+      this.lobbySpectators = state.spectators || [];
       this.updateLobbyUI();
+    };
+
+    window.multiplayerManager.onKicked = (msg) => {
+      this.showToast(msg || 'You were kicked from the room by host.');
+      this.switchScreen('screen-main-menu');
     };
 
     window.multiplayerManager.onMatchStart = (payload) => {
@@ -455,6 +563,7 @@ class ShortCircuitApp {
     const seat2Status = document.getElementById('seat2-status');
     const seat2AvatarImg = document.getElementById('seat2-avatar-img');
     const addBotBtn = document.getElementById('btn-lobby-add-bot');
+    const kickSeat2Btn = document.getElementById('btn-kick-seat2');
     const startBtn = document.getElementById('btn-start-match');
 
     if (this.lobbyOpponent) {
@@ -465,6 +574,9 @@ class ShortCircuitApp {
       }
       if (seat2AvatarImg) seat2AvatarImg.src = this.lobbyOpponent.avatar;
       if (addBotBtn) addBotBtn.style.display = 'none';
+      if (kickSeat2Btn) {
+        kickSeat2Btn.style.display = (this.lobbyRole === 'host') ? 'inline-flex' : 'none';
+      }
       if (startBtn) startBtn.disabled = false;
     } else {
       if (seat2Name) seat2Name.textContent = 'Waiting for challenger...';
@@ -474,7 +586,40 @@ class ShortCircuitApp {
       }
       if (seat2AvatarImg) seat2AvatarImg.src = '';
       if (addBotBtn && this.lobbyRole === 'host') addBotBtn.style.display = 'inline-flex';
+      if (kickSeat2Btn) kickSeat2Btn.style.display = 'none';
       if (startBtn) startBtn.disabled = true;
+    }
+
+    // Render Spectator Bench Roster (up to 4 spectators, total 6 players in room)
+    const specGrid = document.getElementById('spectator-slots-grid');
+    if (specGrid) {
+      specGrid.innerHTML = '';
+      const maxSpecs = 4;
+      for (let i = 0; i < maxSpecs; i++) {
+        const spec = this.lobbySpectators[i];
+        const chip = document.createElement('div');
+        chip.className = 'spectator-chip';
+
+        if (spec) {
+          chip.innerHTML = `<span>👀 ${spec.name}</span>`;
+          if (this.lobbyRole === 'host') {
+            const kickBtn = document.createElement('button');
+            kickBtn.className = 'btn-kick';
+            kickBtn.style.fontSize = '9px';
+            kickBtn.style.padding = '2px 6px';
+            kickBtn.textContent = 'KICK';
+            kickBtn.addEventListener('click', () => {
+              window.soundFX?.playClick();
+              if (window.multiplayerManager) window.multiplayerManager.sendKickPlayer(spec.id);
+            });
+            chip.appendChild(kickBtn);
+          }
+        } else {
+          chip.classList.add('empty');
+          chip.textContent = 'EMPTY BENCH SLOT';
+        }
+        specGrid.appendChild(chip);
+      }
     }
   }
 
@@ -560,7 +705,7 @@ class ShortCircuitApp {
     }, 14);
   }
 
-  // Render complete HUD state
+  // Render complete HUD state with explicit player names
   renderHUD(state, eventMeta = {}) {
     // 1. Chamber / Wire pool tracker
     const liveEl = document.getElementById('hud-live-count');
@@ -620,23 +765,31 @@ class ShortCircuitApp {
     if (p2.hp <= 1) station2?.classList.add('critical-voltage-active');
     else station2?.classList.remove('critical-voltage-active');
 
-    // Turn Indicators & Critical Timer
+    // Turn Indicators & Explicit Player Names for Node Banner
     const oscStatus = document.getElementById('osc-status-text');
+    const activePlayerName = (state.activePlayerKey === 'p1') ? p1.name : p2.name;
+    const oppPlayerName = (state.activePlayerKey === 'p1') ? p2.name : p1.name;
 
     if (state.activePlayerKey === 'p1') {
       station1?.classList.add('active-turn');
       station2?.classList.remove('active-turn');
       if (oscStatus) {
-        oscStatus.textContent = `${p1.name.toUpperCase()} HAS THE NODE`;
+        oscStatus.textContent = `⚡ [${p1.name.toUpperCase()}] HAS THE CIRCUIT NODE`;
         oscStatus.style.color = 'var(--neon-cyan)';
       }
     } else {
       station2?.classList.add('active-turn');
       station1?.classList.remove('active-turn');
       if (oscStatus) {
-        oscStatus.textContent = `${p2.name.toUpperCase()} HAS THE NODE`;
+        oscStatus.textContent = `⚡ [${p2.name.toUpperCase()}] HAS THE CIRCUIT NODE`;
         oscStatus.style.color = 'var(--neon-pink)';
       }
+    }
+
+    // Subtitle on shock opponent button showing target name
+    const subShockOpp = document.getElementById('sub-shock-opponent');
+    if (subShockOpp) {
+      subShockOpp.textContent = `Target [${oppPlayerName.toUpperCase()}] terminal (Damage if Live)`;
     }
 
     // Manage 10-Second Critical Voltage Timer for Active Player
@@ -725,7 +878,6 @@ class ShortCircuitApp {
       : (this.lobbyRole === 'host' ? this.engine.activePlayerKey === 'p1' : (this.lobbyRole === 'opponent' ? this.engine.activePlayerKey === 'p2' : false));
 
     const isSpectator = (this.lobbyRole === 'spectator');
-    const isEnemyView = (playerKey === 'p2' && !isSpectator);
     const canUse = (playerKey === 'p1' && isMyTurn && !this.engine.gameOver && !isJammed);
 
     for (let i = 0; i < 4; i++) {
@@ -736,7 +888,6 @@ class ShortCircuitApp {
 
       if (i < items.length) {
         if (isSpectator) {
-          // Mask spectator slots
           slot.textContent = '❓';
           slot.classList.add('masked');
         } else {
@@ -752,7 +903,6 @@ class ShortCircuitApp {
 
           if (canUse) {
             slot.addEventListener('click', () => {
-              // Check mobile touch screen or desktop
               if (window.innerWidth < 640) {
                 this.mobilePendingItem = { playerKey, itemIndex: i, itemType };
                 this.showMobileItemModal(itemDef);
@@ -797,7 +947,6 @@ class ShortCircuitApp {
       }, this.currentUser.id);
     }
 
-    // Play appropriate sound & animation
     if (itemType === 'multimeter') {
       window.soundFX.playScannerBeep(res.peek === 'LIVE');
       this.showSecretPeek(res.peek);
@@ -866,8 +1015,9 @@ class ShortCircuitApp {
 
     // ── 3-SECOND INTENSE BEAT BUILDUP & REVEAL SEQUENCE ──────────────────────
     const oscStatus = document.getElementById('osc-status-text');
+    const activeName = this.engine.getActivePlayer().name;
     if (oscStatus) {
-      oscStatus.textContent = '⚡ CHARGING NODE... DISCHARGING IN 3s';
+      oscStatus.textContent = `⚡ [${activeName.toUpperCase()}] CHARGING NODE... REVEAL IN 3s`;
       oscStatus.style.color = 'var(--neon-amber)';
     }
 
@@ -894,7 +1044,6 @@ class ShortCircuitApp {
         this.canvasFX.setState('shock');
         this.canvasFX.triggerSparks(0.5, 0.5, wasBoosted ? 55 : 35, '#ff0055');
 
-        // Trigger red hit flash overlay on target station!
         const hitTargetStation = (targetKey === 'p1') ? 'station-p1' : (type === 'ACTION_SHOCK_SELF' ? (shooterKey === 'p1' ? 'station-p1' : 'station-p2') : 'station-p2');
         this.canvasFX.triggerHitFlash(hitTargetStation, '#ff0055');
       } else {
@@ -948,7 +1097,6 @@ class ShortCircuitApp {
       ? isPlayer1Winner
       : (this.lobbyRole === 'host' ? isPlayer1Winner : (this.lobbyRole === 'opponent' ? !isPlayer1Winner : false));
 
-    // Save persistent match statistics
     if (this.lobbyRole !== 'spectator') {
       this.saveRecord(amIWinner);
     }

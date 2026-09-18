@@ -1420,3 +1420,154 @@ input:checked + .slider:before {
   line-height: 1.5;
 }
 
+/* Icon Buttons (Header Edit Handle) */
+.icon-btn {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* On-Screen Virtual Keyboard Styles */
+.virtual-input-display {
+  width: 100%;
+  background: #05080e;
+  border: 2px solid var(--neon-cyan);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  text-align: center;
+  letter-spacing: 3px;
+  text-shadow: var(--glow-cyan);
+  box-shadow: 0 0 14px rgba(0, 255, 204, 0.2);
+}
+
+.virtual-keyboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.vk-row {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.vk-key {
+  flex: 1;
+  min-width: 32px;
+  height: 44px;
+  background: linear-gradient(180deg, #18253d 0%, #0d1628 100%);
+  border: 1px solid var(--border-neon);
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: all 0.1s ease;
+}
+
+.vk-key:hover {
+  background: var(--neon-cyan);
+  color: #000;
+  box-shadow: 0 0 10px rgba(0, 255, 204, 0.6);
+  transform: translateY(-2px);
+}
+
+.vk-key:active {
+  transform: translateY(1px);
+}
+
+.vk-key.vk-wide {
+  flex: 2;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.vk-key.action-btn {
+  background: linear-gradient(180deg, #2a3c5a 0%, #152238 100%);
+  border-color: var(--neon-amber);
+  color: var(--neon-amber);
+}
+
+.vk-key.action-btn:hover {
+  background: var(--neon-amber);
+  color: #000;
+}
+
+/* Spectator Roster Panel in Lobby (Max 6 Players) */
+.spectator-roster-panel {
+  width: 100%;
+  max-width: 760px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.roster-title {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+.spectator-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.spectator-chip {
+  background: var(--bg-panel-light);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-main);
+}
+
+.spectator-chip.empty {
+  color: var(--text-dim);
+  font-style: italic;
+  justify-content: center;
+}
+
+.btn-kick {
+  background: rgba(255, 0, 85, 0.2);
+  border-color: var(--neon-pink);
+  color: var(--neon-pink);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-kick:hover {
+  background: var(--neon-pink);
+  color: #fff;
+}
+
+

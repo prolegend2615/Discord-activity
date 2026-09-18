@@ -26,7 +26,10 @@
           <img src="" alt="Avatar" id="header-avatar-img">
         </div>
         <div class="user-info">
-          <span class="user-name" id="header-username">INITIALIZING...</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="user-name" id="header-username">INITIALIZING...</span>
+            <button class="icon-btn" id="btn-edit-username" title="Change Username via On-Screen Keyboard">✏️</button>
+          </div>
           <span class="user-status" id="header-status">TERMINAL ONLINE</span>
         </div>
       </div>
@@ -59,6 +62,11 @@
           <button class="term-btn" id="btn-open-join">
             <span>🔑</span>
             <span>JOIN ROOM BY CODE</span>
+          </button>
+
+          <button class="term-btn" id="btn-menu-virtual-kb">
+            <span>⌨️</span>
+            <span>SET HANDLE (ON-SCREEN KEYBOARD)</span>
           </button>
         </div>
       </div>
@@ -98,10 +106,21 @@
           </div>
           <span class="card-name" id="seat2-name">Waiting for challenger...</span>
           <span class="status-pill waiting" id="seat2-status">EMPTY</span>
+          <button class="term-btn btn-danger btn-kick" id="btn-kick-seat2" style="display:none; margin-top: 8px; padding: 4px 10px; font-size: 10px;">
+            <span>🚫</span> KICK PLAYER
+          </button>
           <button class="term-btn" id="btn-lobby-add-bot" style="margin-top: 10px; padding: 6px 12px; font-size: 11px;">
             <span>🤖</span>
             <span>+ ADD AI BOT</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Spectator Roster (Up to 4 Spectators, Max 6 Room Total) -->
+      <div class="spectator-roster-panel">
+        <div class="roster-title">SPECTATOR BENCH (MAX 6 PLAYERS IN ROOM)</div>
+        <div class="spectator-slots-grid" id="spectator-slots-grid">
+          <div class="spectator-chip empty">EMPTY BENCH SLOT</div>
         </div>
       </div>
 
@@ -204,7 +223,7 @@
           <div class="primary-actions-dock">
             <button class="shock-btn shock-opponent-btn" id="btn-shock-opponent">
               <span>⚡ SHOCK OPPONENT</span>
-              <span class="btn-sub">Target rival terminal (Damage if Live)</span>
+              <span class="btn-sub" id="sub-shock-opponent">Target rival terminal (Damage if Live)</span>
             </button>
 
             <button class="shock-btn shock-self-btn" id="btn-shock-self">
@@ -275,7 +294,45 @@
 
   <!-- ================= MODALS ================= -->
 
-  <!-- 1. HOW TO PLAY MODAL -->
+  <!-- 1. ON-SCREEN VIRTUAL KEYBOARD MODAL (CUSTOM USERNAME ENTRY) -->
+  <div class="modal-overlay" id="modal-virtual-keyboard">
+    <div class="modal-dialog" style="max-width: 580px;">
+      <div class="modal-header">
+        <h2>SET USERNAME (ON-SCREEN KEYBOARD)</h2>
+        <button class="modal-close-btn" data-close="modal-virtual-keyboard">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-dim);">Tap the keys below to set your terminal handle (No device keyboard required):</p>
+
+        <!-- Readonly Display Box to prevent native keyboard popup -->
+        <div class="virtual-input-display" id="vk-display">RUNNER_001</div>
+
+        <!-- Cyber Virtual QWERTY Keyboard -->
+        <div class="virtual-keyboard-grid">
+          <div class="vk-row">
+            <button class="vk-key" data-key="Q">Q</button><button class="vk-key" data-key="W">W</button><button class="vk-key" data-key="E">E</button><button class="vk-key" data-key="R">R</button><button class="vk-key" data-key="T">T</button><button class="vk-key" data-key="Y">Y</button><button class="vk-key" data-key="U">U</button><button class="vk-key" data-key="I">I</button><button class="vk-key" data-key="O">O</button><button class="vk-key" data-key="P">P</button>
+          </div>
+          <div class="vk-row">
+            <button class="vk-key" data-key="A">A</button><button class="vk-key" data-key="S">S</button><button class="vk-key" data-key="D">D</button><button class="vk-key" data-key="F">F</button><button class="vk-key" data-key="G">G</button><button class="vk-key" data-key="H">H</button><button class="vk-key" data-key="J">J</button><button class="vk-key" data-key="K">K</button><button class="vk-key" data-key="L">L</button><button class="vk-key" data-key="_">_</button>
+          </div>
+          <div class="vk-row">
+            <button class="vk-key" data-key="Z">Z</button><button class="vk-key" data-key="X">X</button><button class="vk-key" data-key="C">C</button><button class="vk-key" data-key="V">V</button><button class="vk-key" data-key="B">B</button><button class="vk-key" data-key="N">N</button><button class="vk-key" data-key="M">M</button><button class="vk-key" data-key="1">1</button><button class="vk-key" data-key="2">2</button><button class="vk-key" data-key="3">3</button>
+          </div>
+          <div class="vk-row">
+            <button class="vk-key vk-wide action-btn" id="vk-btn-clear">CLEAR</button>
+            <button class="vk-key vk-wide action-btn" id="vk-btn-backspace">⌫ BACKSPACE</button>
+            <button class="vk-key vk-wide action-btn" id="vk-btn-space">SPACE</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="term-btn btn-danger" style="padding: 8px 16px; font-size: 13px;" data-close="modal-virtual-keyboard">CANCEL</button>
+        <button class="term-btn btn-primary" id="vk-btn-submit" style="padding: 8px 20px; font-size: 13px;">CONFIRM HANDLE ↵</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. HOW TO PLAY MODAL -->
   <div class="modal-overlay" id="modal-how-to-play">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -325,7 +382,7 @@
     </div>
   </div>
 
-  <!-- 2. SETTINGS MODAL -->
+  <!-- 3. SETTINGS MODAL -->
   <div class="modal-overlay" id="modal-settings">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -377,7 +434,7 @@
     </div>
   </div>
 
-  <!-- 3. JOIN ROOM MODAL -->
+  <!-- 4. JOIN ROOM MODAL -->
   <div class="modal-overlay" id="modal-join-room">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -395,7 +452,7 @@
     </div>
   </div>
 
-  <!-- 4. MATCH OVER MODAL -->
+  <!-- 5. MATCH OVER MODAL -->
   <div class="modal-overlay" id="modal-match-over">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -417,7 +474,7 @@
     </div>
   </div>
 
-  <!-- 5. MOBILE TOUCH ITEM CONFIRMATION MODAL -->
+  <!-- 6. MOBILE TOUCH ITEM CONFIRMATION MODAL -->
   <div class="modal-overlay" id="modal-mobile-item">
     <div class="modal-dialog">
       <div class="modal-header">

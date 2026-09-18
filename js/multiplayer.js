@@ -10,11 +10,13 @@ class MultiplayerManager {
     this.onRoomUpdate = null;
     this.onGameAction = null;
     this.onMatchStart = null;
+    this.onKicked = null;
 
     this.localRoomState = {
       roomId: null,
       host: null,
       opponent: null,
+      spectators: [],
       spectatorsCount: 0,
       settings: { maxHp: 3, itemsPerRound: 1 },
       gameActive: false
@@ -75,6 +77,7 @@ class MultiplayerManager {
         roomId: this.roomId,
         host: { ...user, isHost: true, ready: true },
         opponent: null,
+        spectators: [],
         spectatorsCount: 0,
         settings: { maxHp: options.maxHp || 3, itemsPerRound: options.itemsPerRound || 1 },
         gameActive: false
@@ -105,6 +108,11 @@ class MultiplayerManager {
         if (this.onRoomUpdate) this.onRoomUpdate(this.localRoomState, this.role);
         break;
 
+      case 'KICKED':
+        this.leaveRoom();
+        if (this.onKicked) this.onKicked(msg.payload.message);
+        break;
+
       case 'MATCH_STARTED':
         if (this.onMatchStart) this.onMatchStart(msg.payload);
         break;
@@ -116,7 +124,12 @@ class MultiplayerManager {
       // BroadcastChannel Fallback Messages
       case 'BC_PLAYER_JOINED':
         if (this.role === 'host') {
-          this.localRoomState.opponent = { ...msg.payload.user, isHost: false, ready: true };
+          if (!this.localRoomState.opponent) {
+            this.localRoomState.opponent = { ...msg.payload.user, isHost: false, ready: true };
+          } else {
+            if (!this.localRoomState.spectators) this.localRoomState.spectators = [];
+            this.localRoomState.spectators.push({ ...msg.payload.user, isHost: false, ready: false });
+          }
           this.broadcast({
             type: 'BC_ROOM_SYNC',
             payload: this.localRoomState
@@ -141,14 +154,20 @@ class MultiplayerManager {
   }
 
   broadcast(msg) {
-    // Send over WS
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
-    // Also send over BroadcastChannel
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage(msg);
     }
+  }
+
+  sendKickPlayer(targetPlayerId) {
+    this.broadcast({
+      type: 'KICK_PLAYER',
+      roomId: this.roomId,
+      payload: { targetPlayerId }
+    });
   }
 
   updateSettings(settings) {

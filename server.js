@@ -4,6 +4,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const MAX_ROOM_PLAYERS = 6;
 
 // MIME types dictionary
 const MIME_TYPES = {
@@ -96,6 +97,7 @@ function getRoomSnapshot(roomId) {
     roomId,
     host: cleanPlayer(room.host),
     opponent: cleanPlayer(room.opponent),
+    spectators: room.spectators.map(cleanPlayer),
     spectatorsCount: room.spectators.length,
     settings: room.settings,
     gameActive: room.gameActive
@@ -131,6 +133,16 @@ wss.on('connection', (ws) => {
             };
             rooms.set(targetRoomId, room);
           } else {
+            // Check room capacity (max 6 players total)
+            const totalCount = 1 + (room.opponent ? 1 : 0) + room.spectators.length;
+            if (totalCount >= MAX_ROOM_PLAYERS && room.host.id !== user.id && room.opponent?.id !== user.id && !room.spectators.some(s => s.id === user.id)) {
+              ws.send(JSON.stringify({
+                type: 'ROOM_FULL',
+                payload: { message: 'Lobby is full (Max 6 players).' }
+              }));
+              return;
+            }
+
             // Assign role
             if (!room.host) {
               room.host = { ...user, ws, isHost: true, ready: true, role: 'host' };
@@ -141,7 +153,12 @@ wss.on('connection', (ws) => {
             } else if (room.opponent && room.opponent.id === user.id) {
               room.opponent.ws = ws;
             } else {
-              room.spectators.push({ ...user, ws, role: 'spectator' });
+              const existingSpec = room.spectators.find(s => s.id === user.id);
+              if (existingSpec) {
+                existingSpec.ws = ws;
+              } else {
+                room.spectators.push({ ...user, ws, role: 'spectator' });
+              }
             }
           }
 
@@ -157,6 +174,40 @@ wss.on('connection', (ws) => {
             type: 'ROOM_UPDATED',
             payload: getRoomSnapshot(targetRoomId)
           });
+          break;
+        }
+
+        case 'KICK_PLAYER': {
+          if (!currentRoomId) return;
+          const room = rooms.get(currentRoomId);
+          // Host can only kick during lobby setup (!gameActive)
+          if (room && !room.gameActive && room.host?.id === currentPlayerId) {
+            const targetId = payload.targetPlayerId;
+            let targetSocket = null;
+
+            if (room.opponent && room.opponent.id === targetId) {
+              targetSocket = room.opponent.ws;
+              room.opponent = room.spectators.shift() || null;
+              if (room.opponent) room.opponent.role = 'opponent';
+            } else {
+              const specIdx = room.spectators.findIndex(s => s.id === targetId);
+              if (specIdx !== -1) {
+                targetSocket = room.spectators[specIdx].ws;
+                room.spectators.splice(specIdx, 1);
+              }
+            }
+
+            if (targetSocket) {
+              try {
+                targetSocket.send(JSON.stringify({ type: 'KICKED', payload: { message: 'You were kicked from the lobby by the host.' } }));
+              } catch (e) {}
+            }
+
+            broadcastToRoom(currentRoomId, {
+              type: 'ROOM_UPDATED',
+              payload: getRoomSnapshot(currentRoomId)
+            });
+          }
           break;
         }
 
