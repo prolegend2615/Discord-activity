@@ -879,60 +879,68 @@ html, body {
 
 /* Combat Terminal Log */
 .combat-log-container {
-  height: 90px;
-  background: #05080e;
-  border: 1px solid var(--border-dim);
-  border-radius: 6px;
-  padding: 8px 12px;
+  height: 180px;
+  min-height: 160px;
+  background: #040710;
+  border: 2px solid var(--border-neon);
+  box-shadow: 0 0 16px rgba(0, 255, 204, 0.2);
+  border-radius: 8px;
+  padding: 14px 16px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
+  gap: 6px;
+  font-size: 14px;
 }
 
 .combat-log-container::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .combat-log-container::-webkit-scrollbar-thumb {
-  background: var(--border-dim);
-  border-radius: 2px;
+  background: var(--neon-cyan);
+  border-radius: 3px;
 }
 
 .log-entry {
-  line-height: 1.4;
-  color: #a0aec0;
+  line-height: 1.5;
+  color: #e2e8f0;
+  font-size: 14px;
+  letter-spacing: 0.5px;
 }
 
 .log-entry.shock-hit {
   color: var(--neon-pink);
-  font-weight: bold;
+  font-weight: 900;
+  text-shadow: 0 0 8px rgba(255, 0, 85, 0.6);
 }
 
 .log-entry.shock-dud {
   color: var(--neon-cyan);
-  font-weight: bold;
+  font-weight: 900;
+  text-shadow: 0 0 8px rgba(0, 255, 204, 0.5);
 }
 
 .log-entry.round {
   color: var(--neon-amber);
-  font-weight: bold;
+  font-weight: 900;
 }
 
 .log-entry.item {
-  color: #e2e8f0;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .log-entry.bot-chatter {
-  color: #a78bfa;
+  color: #c4b5fd;
   font-style: italic;
 }
 
 .log-entry.winner {
   color: #39ff14;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 16px;
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
 }
 
 /* ================= 4. MODALS & POPUPS ================= */

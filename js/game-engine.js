@@ -153,11 +153,11 @@ class GameEngine {
     this.opponentStunned = false;
     this.lastPeekedWire = null;
 
-    // Grant items to all alive players (max 4 per player)
+    // Grant items to all alive players (max 8 per player)
     this.getAlivePlayers().forEach(p => {
       p.isJammed = false;
       for (let i = 0; i < this.itemsPerRound; i++) {
-        if (p.items.length < 4) {
+        if (p.items.length < 8) {
           const newItem = window.getRandomItem ? window.getRandomItem() : 'multimeter';
           p.items.push(newItem);
         }

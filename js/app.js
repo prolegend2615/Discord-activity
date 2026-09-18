@@ -877,7 +877,7 @@ class ShortCircuitApp {
     const isSpectator = (this.lobbyRole === 'spectator');
     const canUse = (isMyTurn && !this.engine.gameOver && !isJammed);
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 8; i++) {
       const slot = document.createElement('div');
       slot.className = 'tool-slot';
 
