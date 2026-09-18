@@ -48,6 +48,8 @@ class ShortCircuitApp {
     const roomParam = urlParams.get('room');
     if (roomParam) {
       this.joinRoomByCode(roomParam);
+    } else {
+      this.switchScreen('screen-main-menu');
     }
   }
 

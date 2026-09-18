@@ -199,14 +199,14 @@ html, body {
 /* Main Content Area / Screen Router */
 .screen-view {
   flex: 1;
-  display: none;
+  display: none !important;
   flex-direction: column;
   position: relative;
   overflow: hidden;
 }
 
 .screen-view.active {
-  display: flex;
+  display: flex !important;
 }
 
 /* ================= 1. MAIN MENU SCREEN ================= */
@@ -542,7 +542,6 @@ html, body {
 /* ================= 3. IN-GAME WORKBENCH HUD ================= */
 #screen-game {
   padding: 16px 20px;
-  display: flex;
   flex-direction: column;
   gap: 12px;
   justify-content: space-between;
